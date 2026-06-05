@@ -1,0 +1,29 @@
+{
+  "name": "tide",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Tide, a configurable local agent harness for model and API tool calls.",
+  "scripts": {
+    "start": "tsx src/cli.ts",
+    "web": "tsx src/server.ts",
+    "web:open": "tsx src/server.ts --open",
+    "demo": "tsx src/demo.ts",
+    "chat": "tsx src/cli.ts",
+    "check": "npm run typecheck && npm test",
+    "test": "tsx --test tests/*.test.ts",
+    "typecheck": "tsc --noEmit",
+    "analyze:source": "node research/analyze-source-tree.mjs"
+  },
+  "dependencies": {
+    "ajv": "^8.17.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.0",
+    "tsx": "^4.19.4",
+    "typescript": "^5.8.3"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

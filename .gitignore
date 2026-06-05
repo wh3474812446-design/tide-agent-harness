@@ -1,0 +1,7 @@
+node_modules/
+dist/
+.sessions/
+.env
+
+# 本机相关，快捷方式里写死了绝对路径，由安装器重建
+*.lnk

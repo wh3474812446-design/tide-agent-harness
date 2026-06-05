@@ -1,0 +1,59 @@
+{
+  "tools": [
+    {
+      "name": "github_repo",
+      "description": "Fetch public metadata for a GitHub repository.",
+      "method": "GET",
+      "url": "https://api.github.com/repos/{{input.owner}}/{{input.repo}}",
+      "headers": {
+        "accept": "application/vnd.github+json",
+        "user-agent": "tide"
+      },
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "owner": {
+            "type": "string",
+            "description": "Repository owner, for example openai."
+          },
+          "repo": {
+            "type": "string",
+            "description": "Repository name, for example openai-node."
+          }
+        },
+        "required": ["owner", "repo"],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "example_search",
+      "description": "Example of an authenticated JSON API call. Replace the URL and env var with your service.",
+      "method": "POST",
+      "url": "https://api.example.com/v1/search",
+      "headers": {
+        "authorization": "Bearer {{env.EXAMPLE_API_KEY}}",
+        "content-type": "application/json"
+      },
+      "body": {
+        "query": "{{input.query}}",
+        "limit": "{{input.limit}}"
+      },
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string"
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 20,
+            "default": 5
+          }
+        },
+        "required": ["query"],
+        "additionalProperties": false
+      }
+    }
+  ]
+}

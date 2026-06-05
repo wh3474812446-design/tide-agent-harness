@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Tide 控制台</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="topbar">
+        <div class="brand">
+          <span class="brand-mark" aria-hidden="true">
+            <svg viewBox="0 0 32 32" role="img">
+              <path d="M4 17.5c4.2-7.4 8.4-7.4 12.6 0s8.1 7.4 11.4 0" />
+              <path d="M4 22.2c4.2-4.1 8.4-4.1 12.6 0s8.1 4.1 11.4 0" />
+            </svg>
+          </span>
+          <div>
+            <h1>Tide 控制台</h1>
+            <p id="sessionLabel">本地会话</p>
+          </div>
+        </div>
+        <div class="top-actions">
+          <button class="secondary-button" id="newSessionButton" type="button">新会话</button>
+          <button class="secondary-button" id="clearButton" type="button">清空</button>
+        </div>
+      </header>
+
+      <main class="workspace">
+        <aside class="left-rail" aria-label="运行侧栏">
+          <section class="panel runtime-panel">
+            <div class="panel-heading">
+              <h2>运行状态</h2>
+              <span class="status-dot" id="healthDot"></span>
+            </div>
+            <dl class="runtime-list">
+              <div>
+                <dt>模型</dt>
+                <dd id="providerValue">加载中</dd>
+              </div>
+              <div>
+                <dt>权限</dt>
+                <dd id="risksValue">加载中</dd>
+              </div>
+              <div>
+                <dt>API 工具</dt>
+                <dd id="apiToolsValue">加载中</dd>
+              </div>
+            </dl>
+          </section>
+
+          <section class="panel model-panel">
+            <div class="panel-heading">
+              <h2>模型 API 设置</h2>
+              <span id="modelConfigStatus">本地保存</span>
+            </div>
+            <form class="model-form" id="modelConfigForm">
+              <label>
+                <span>供应商</span>
+                <select id="providerSelect" name="provider"></select>
+              </label>
+              <label>
+                <span>API Key</span>
+                <input
+                  id="apiKeyInput"
+                  name="apiKey"
+                  type="password"
+                  autocomplete="off"
+                  placeholder="留空表示不修改已保存 Key"
+                />
+              </label>
+              <label>
+                <span>Base URL</span>
+                <input id="baseUrlInput" name="baseUrl" type="url" autocomplete="off" />
+              </label>
+              <label>
+                <span>模型名</span>
+                <input id="modelInput" name="model" type="text" autocomplete="off" />
+              </label>
+              <button class="save-model-button" id="saveModelButton" type="submit">保存并切换</button>
+            </form>
+          </section>
+
+          <section class="panel workspace-panel">
+            <div class="panel-heading">
+              <h2>工作区范围</h2>
+              <span id="workspaceStatus">本地保存</span>
+            </div>
+            <form class="model-form workspace-form" id="workspaceForm">
+              <div class="workspace-presets" id="workspacePresets"></div>
+              <label>
+                <span>工作区根目录</span>
+                <input
+                  id="workspaceInput"
+                  name="workspace"
+                  type="text"
+                  autocomplete="off"
+                  spellcheck="false"
+                  placeholder="例如 C:\Users\你的用户名"
+                />
+              </label>
+              <label class="workspace-toggle">
+                <input id="unrestrictedInput" name="unrestricted" type="checkbox" />
+                <span>允许访问整台电脑（可用绝对路径在任意位置读写，高风险）</span>
+              </label>
+              <p class="workspace-hint" id="workspaceHint"></p>
+              <button class="save-model-button" id="saveWorkspaceButton" type="submit">保存并应用</button>
+            </form>
+          </section>
+
+          <section class="panel tools-panel">
+            <div class="panel-heading">
+              <h2>工具列表</h2>
+              <span id="toolCount">0</span>
+            </div>
+            <div class="tool-list" id="toolList"></div>
+          </section>
+        </aside>
+
+        <section class="chat-surface" aria-label="聊天">
+          <div class="messages" id="messages"></div>
+
+          <form class="composer" id="chatForm">
+            <textarea
+              id="messageInput"
+              name="message"
+              rows="3"
+              autocomplete="off"
+              spellcheck="true"
+              placeholder="例如：读取 README.md，总结这个项目怎么用"
+            ></textarea>
+            <div class="composer-footer">
+              <span id="composerStatus">就绪</span>
+              <button id="sendButton" type="submit" aria-label="发送消息">↑</button>
+            </div>
+          </form>
+        </section>
+
+        <aside class="right-rail" aria-label="事件">
+          <section class="panel events-panel">
+            <div class="panel-heading">
+              <h2>事件流</h2>
+              <span id="eventCount">0</span>
+            </div>
+            <div class="event-list" id="eventList"></div>
+          </section>
+        </aside>
+      </main>
+    </div>
+
+    <div class="toast" id="toast" role="status" aria-live="polite"></div>
+    <script type="module" src="/app.js"></script>
+  </body>
+</html>
