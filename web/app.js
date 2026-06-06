@@ -32,6 +32,7 @@ const elements = {
   healthDot: document.querySelector("#healthDot"),
   newSessionButton: document.querySelector("#newSessionButton"),
   clearButton: document.querySelector("#clearButton"),
+  quitButton: document.querySelector("#quitButton"),
   toast: document.querySelector("#toast"),
 };
 
@@ -168,6 +169,20 @@ elements.clearButton.addEventListener("click", () => {
   messages = [];
   localStorage.removeItem(messagesKey);
   renderMessages();
+});
+
+elements.quitButton.addEventListener("click", async () => {
+  if (!window.confirm("退出 Tide？将关闭后端服务，此窗口可随后关闭。")) return;
+  quitting = true;
+  elements.quitButton.disabled = true;
+  try {
+    await fetch("/api/quit", { method: "POST" });
+  } catch {
+    /* 后端已经在退出，忽略网络错误 */
+  }
+  showQuitNotice();
+  // 应用窗口模式下 window.close() 通常可直接关闭；不行就显示提示让用户手动关。
+  setTimeout(() => window.close(), 400);
 });
 
 elements.providerSelect.addEventListener("change", () => {
@@ -558,6 +573,77 @@ function toolDescription(name, fallback) {
   };
   return descriptions[name] || fallback || "";
 }
+
+// --- 后端连接看门狗：单窗口模式下，后端重启时让页面自动重连，无需用户操作 ---
+let backendOnline = true;
+let reconnectOverlay = null;
+let quitting = false;
+
+function showQuitNotice() {
+  const overlay = ensureReconnectOverlay();
+  overlay.querySelector(".reconnect-spinner")?.remove();
+  const title = overlay.querySelector(".reconnect-title");
+  const hint = overlay.querySelector(".reconnect-hint");
+  if (title) title.textContent = "Tide 已退出";
+  if (hint) hint.textContent = "后端已关闭，可以关闭此窗口了（或按 Alt+F4）。";
+  overlay.classList.add("is-visible");
+}
+
+function ensureReconnectOverlay() {
+  if (reconnectOverlay) return reconnectOverlay;
+  const overlay = document.createElement("div");
+  overlay.className = "reconnect-overlay";
+
+  const card = document.createElement("div");
+  card.className = "reconnect-card";
+
+  const spinner = document.createElement("div");
+  spinner.className = "reconnect-spinner";
+
+  const title = document.createElement("div");
+  title.className = "reconnect-title";
+  title.textContent = "正在重连后端…";
+
+  const hint = document.createElement("div");
+  hint.className = "reconnect-hint";
+  hint.textContent = "后端正在自动恢复，请稍候，无需关闭窗口。";
+
+  card.append(spinner, title, hint);
+  overlay.append(card);
+  document.body.append(overlay);
+  reconnectOverlay = overlay;
+  return overlay;
+}
+
+function showReconnect() {
+  ensureReconnectOverlay().classList.add("is-visible");
+}
+
+function hideReconnect() {
+  if (reconnectOverlay) reconnectOverlay.classList.remove("is-visible");
+}
+
+async function pingBackend() {
+  if (quitting) return;
+  try {
+    const response = await fetch("/api/state", { cache: "no-store" });
+    if (!response.ok) throw new Error("backend not ready");
+    if (!backendOnline) {
+      backendOnline = true;
+      hideReconnect();
+      elements.healthDot.classList.add("is-online");
+      loadState();
+    }
+  } catch {
+    if (backendOnline) {
+      backendOnline = false;
+      elements.healthDot.classList.remove("is-online");
+    }
+    showReconnect();
+  }
+}
+
+window.setInterval(pingBackend, 2500);
 
 function eventLabel(type) {
   const labels = {

@@ -142,6 +142,16 @@ h1 {
   outline: none;
 }
 
+.danger-button {
+  color: var(--danger);
+}
+
+.danger-button:hover,
+.danger-button:focus-visible {
+  border-color: var(--danger);
+  background: var(--panel-2);
+}
+
 .workspace {
   display: grid;
   grid-template-columns: minmax(280px, 350px) minmax(0, 1fr) minmax(240px, 300px);
@@ -803,4 +813,63 @@ h1 {
 .status-warn {
   color: var(--danger) !important;
   font-weight: 600;
+}
+
+/* 重连遮罩：后端重启时盖住整个窗口，自动消失，无需用户操作 */
+.reconnect-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: oklch(12% 0.01 260 / 0.72);
+  backdrop-filter: blur(3px);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s ease;
+}
+
+.reconnect-overlay.is-visible {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.reconnect-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  padding: 28px 36px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  background: var(--panel);
+  box-shadow: 0 12px 40px oklch(0% 0 0 / 0.45);
+  text-align: center;
+}
+
+.reconnect-spinner {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  border: 3px solid var(--line-strong);
+  border-top-color: var(--accent);
+  animation: reconnect-spin 0.8s linear infinite;
+}
+
+@keyframes reconnect-spin {
+  to { transform: rotate(360deg); }
+}
+
+.reconnect-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.reconnect-hint {
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--muted);
+  max-width: 240px;
 }

@@ -141,6 +141,15 @@ const server = http.createServer(async (request, response) => {
       return;
     }
 
+    if (request.method === "POST" && url.pathname === "/api/quit") {
+      // 主动退出：回应后让后端进程自行退出（隐藏的后端没有窗口可关，靠这个开关）。
+      sendJson(response, 200, { ok: true });
+      response.on("finish", () => {
+        setTimeout(() => process.exit(0), 150);
+      });
+      return;
+    }
+
     if (request.method === "GET") {
       await serveStatic(url.pathname, response);
       return;

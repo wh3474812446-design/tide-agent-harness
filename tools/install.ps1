@@ -126,19 +126,21 @@ else {
 # 4. 在项目文件夹内创建一键启动快捷方式（不再放到桌面）
 # ---------------------------------------------------------------------------
 Write-Step '在项目文件夹内创建一键启动快捷方式'
-$launcher = Join-Path $root 'Start Tide.cmd'
-if (Test-Path $launcher) {
+$vbsLauncher = Join-Path $root 'tools\Tide.vbs'
+if (Test-Path $vbsLauncher) {
     try {
         # 清理旧的桌面快捷方式（如果之前版本创建过）
         $oldDesktopLnk = Join-Path ([Environment]::GetFolderPath('Desktop')) 'Tide 控制台.lnk'
         if (Test-Path $oldDesktopLnk) { Remove-Item $oldDesktopLnk -Force -ErrorAction SilentlyContinue }
 
+        # 快捷方式指向 wscript + Tide.vbs：后端隐藏托管，只弹一个应用窗口，零黑窗口闪烁。
         $lnkPath  = Join-Path $root '一键启动 Tide.lnk'
         $shell    = New-Object -ComObject WScript.Shell
         $shortcut = $shell.CreateShortcut($lnkPath)
-        $shortcut.TargetPath       = $launcher
+        $shortcut.TargetPath       = "$env:SystemRoot\System32\wscript.exe"
+        $shortcut.Arguments        = """$vbsLauncher"""
         $shortcut.WorkingDirectory = $root
-        $shortcut.Description       = 'Tide 本地 Agent 控制台（一键启动）'
+        $shortcut.Description       = 'Tide 本地 Agent 控制台（单窗口，前端托管后端）'
         $shortcut.IconLocation      = "$env:SystemRoot\System32\shell32.dll,13"
         $shortcut.Save()
         Write-Ok "一键启动快捷方式已创建：$lnkPath"
@@ -146,15 +148,15 @@ if (Test-Path $launcher) {
         Write-Warn2 "创建快捷方式失败：$($_.Exception.Message)"
     }
 } else {
-    Write-Warn2 '未找到 Start Tide.cmd，跳过快捷方式创建'
+    Write-Warn2 '未找到 tools\Tide.vbs，跳过快捷方式创建'
 }
 
 # ---------------------------------------------------------------------------
 # 5. Launch the web console
 # ---------------------------------------------------------------------------
 Write-Step '打开 Tide 控制台网页'
-Write-Info '浏览器将自动打开控制台。首次使用请在网页右上的“模型配置”里选择供应商并填写 API Key。'
-Start-Process -FilePath $launcher -WorkingDirectory $root
+Write-Info '浏览器将自动打开控制台。首次使用请在网页左侧的“模型 API 设置”里选择供应商并填写 API Key。'
+Start-Process -FilePath "$env:SystemRoot\System32\wscript.exe" -ArgumentList """$vbsLauncher""" -WorkingDirectory $root
 
 Write-Host "`n============================================================" -ForegroundColor Green
 Write-Host "  安装完成！以后双击项目文件夹里的 “一键启动 Tide” 即可启动。" -ForegroundColor Green
