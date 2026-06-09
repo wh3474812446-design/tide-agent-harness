@@ -31,6 +31,9 @@ export const deletePathTool: Tool = {
       throw new Error("Refusing to delete a directory unless recursive is true.");
     }
 
+    // 单文件删除可回滚（备份内容）；目录递归删除暂不支持回滚。
+    if (!targetStat.isDirectory()) await context.checkpoint?.backup(targetPath);
+
     await rm(targetPath, { recursive: targetStat.isDirectory(), force: false });
     return `Deleted ${targetStat.isDirectory() ? "directory" : "file"} at ${requestedPath}.`;
   },

@@ -3,7 +3,7 @@ import { EventBus } from "../events.js";
 import { HookRunner } from "../hooks/hooks.js";
 import { RiskPolicy } from "../policy/policy.js";
 import type { ToolCallBlock, ToolResultBlock } from "../types.js";
-import type { Tool } from "./tool.js";
+import type { CheckpointBackup, Tool } from "./tool.js";
 import { ToolRegistry } from "./tool.js";
 
 interface ToolExecutorOptions {
@@ -15,6 +15,8 @@ interface ToolExecutorOptions {
   maxOutputChars?: number;
   /** 可选 Hooks：工具执行前后跑命令；PreToolUse 非零退出可拦截。 */
   hooks?: HookRunner;
+  /** 可选检查点：注入工具上下文，文件工具改动前备份原内容。 */
+  checkpoint?: CheckpointBackup;
 }
 
 interface AjvInstance {
@@ -32,6 +34,7 @@ export class ToolExecutor {
   readonly #timeoutMs: number;
   readonly #maxOutputChars: number;
   readonly #hooks?: HookRunner;
+  readonly #checkpoint?: CheckpointBackup;
   readonly #ajv = new Ajv({ allErrors: true, strict: false });
   readonly #validators = new Map<string, ValidateFunction>();
 
@@ -43,6 +46,7 @@ export class ToolExecutor {
     this.#timeoutMs = options.timeoutMs ?? 60000;
     this.#maxOutputChars = options.maxOutputChars ?? 30000;
     this.#hooks = options.hooks;
+    this.#checkpoint = options.checkpoint;
   }
 
   async executeAll(calls: ToolCallBlock[], parentSignal?: AbortSignal): Promise<ToolResultBlock[]> {
@@ -140,7 +144,7 @@ export class ToolExecutor {
         );
       });
       return await Promise.race([
-        tool.execute(input, { cwd: this.#cwd, signal: controller.signal }),
+        tool.execute(input, { cwd: this.#cwd, signal: controller.signal, checkpoint: this.#checkpoint }),
         aborted,
       ]);
     } finally {

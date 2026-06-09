@@ -93,6 +93,14 @@ API Key 只保存在本地 `.env`，**不会上传**。
 | 读写本地文件 / 整机访问 | ✅ | 内置文件工具（`read_file` 带行号 + offset/limit 区间读）+ 可放开到整台电脑 |
 | 读取项目约定 | ✅ | 启动时自动加载工作区 `CLAUDE.md` / `AGENTS.md` 注入系统提示 |
 | 终端里直接对话 | ✅ | `npm link` 后用 `tide` 命令在任意目录启动，Claude Code 风格的终端界面 |
+| 流式输出 | ✅ | OpenAI 兼容 provider SSE 流式，CLI 边收边打字 |
+| 联网抓取 / 搜索 | ✅ | `web_fetch`（抓网页转文本）+ `web_search`（DuckDuckGo 免 key） |
+| Token / 费用统计 | ✅ | 累计每轮用量，按模型价目表估算费用，统计行显示 |
+| 计划模式 | ✅ | CLI `/plan`：只读调研、拦截写/执行/联网，先出计划再动手 |
+| 自动化 Hooks | ✅ | `hooks.json` 配 PreToolUse(可拦截)/PostToolUse(如自动 lint) |
+| 编辑前 diff 预览 | ✅ | 写/改文件审批时展示彩色 +/- diff |
+| 改动回滚 | ✅ | 改文件前自动备份，CLI `/rewind` 撤销上一步改动 |
+| 子代理 / 并行子任务 | ✅ | `spawn_agent` 把子任务交给独立子代理，一轮多发即并行 |
 | 调用 HTTP API | ✅ | 通过 `HARNESS_API_TOOLS` 配置的 JSON 工具 |
 | 自己给自己装 skill | ✅ | `install_skill` 工具 / `--install-skill` 命令，从本地目录或 git URL 安装；`skill` 工具按需加载指令 |
 | 连接 MCP（Model Context Protocol） | ✅ | 官方 SDK，配置 `mcp.json` 即连接 server，工具桥接成 `mcp__server__tool`，支持 stdio/HTTP/SSE |

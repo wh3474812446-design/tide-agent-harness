@@ -104,6 +104,7 @@ try {
   if (prompt) {
     stream.headerThisTurn = false;
     stream.didStream = false;
+    runtime.checkpoints.begin(prompt);
     const result = await agent.run(prompt);
     if (!stream.didStream) console.log(ui.assistant(result.finalText));
     console.log(printStats(result));
@@ -163,6 +164,17 @@ async function runInteractiveChat(
       );
       continue;
     }
+    if (input === "/rewind") {
+      const r = await runtime.checkpoints.rewindLast();
+      console.log(
+        ui.note(
+          r
+            ? `已回滚上一步改动（"${r.label}"），恢复 ${r.restored} 个文件。`
+            : "没有可回滚的文件改动。",
+        ),
+      );
+      continue;
+    }
 
     // 计划模式下给模型加一句指令，让它先出计划而不是动手。
     const effectiveInput = planMode
@@ -172,6 +184,7 @@ async function runInteractiveChat(
     try {
       stream.headerThisTurn = false;
       stream.didStream = false;
+      runtime.checkpoints.begin(input);
       const result = await agent.run(effectiveInput, { sessionId });
       sessionId = result.sessionId;
       if (!stream.didStream) console.log(ui.assistant(result.finalText));

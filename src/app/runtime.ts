@@ -11,10 +11,13 @@ import { SessionStore } from "../session/session-store.js";
 import type { ModelToolDefinition, RiskLevel } from "../types.js";
 import { registerApiToolsFromFile } from "../tools/api/api-tool.js";
 import { createDefaultToolRegistry } from "../tools/builtins/index.js";
+import { createSpawnAgentTool } from "../tools/builtins/spawn-agent.js";
 import { ToolExecutor } from "../tools/executor.js";
+import { ToolRegistry } from "../tools/tool.js";
 import { registerMcpServersFromFile, type McpServerStatus } from "../mcp/mcp-manager.js";
 import { setupSkills, type SkillManager } from "../skills/index.js";
 import { HookRunner, loadHooksConfig } from "../hooks/hooks.js";
+import { CheckpointStore } from "../checkpoint/checkpoint.js";
 import type { LoadedSkill } from "../skills/skill-loader.js";
 import { getModelPreset } from "./model-config.js";
 
@@ -38,6 +41,8 @@ export interface TideRuntime {
   skillsDir: string;
   /** 是否加载了项目记忆文件（CLAUDE.md / AGENTS.md）。 */
   hasProjectContext: boolean;
+  /** 检查点存储：CLI 每条消息前 begin()，/rewind 时 rewindLast()。 */
+  checkpoints: CheckpointStore;
   /** 技能管理器：支持运行时 reload（热加载），install 后无需重启。 */
   skillManager?: SkillManager;
   /** 释放资源（关闭 MCP 子进程 / HTTP 会话）。退出前调用。 */
@@ -129,24 +134,38 @@ export async function createTideRuntime(options: {
   // --- Hooks：加载 hooks.json（PreToolUse/PostToolUse），有规则才挂到执行器上。---
   const hooksConfig = await loadHooksConfig(await resolveConfigPath("hooks.json", options.cwd, configRoot));
   const hookRunner = new HookRunner(hooksConfig, workspaceRoot);
+  const checkpoints = new CheckpointStore();
   const executor = new ToolExecutor({
     cwd: workspaceRoot,
     registry,
     policy,
     events,
     hooks: hookRunner.hasAny ? hookRunner : undefined,
+    checkpoint: checkpoints,
   });
   const providerName = modelProviderName();
+  const provider = createModelProvider(providerName);
+  const sessions = new SessionStore(path.join(options.cwd, ".sessions"));
   // 项目记忆：自动加载工作区里的 CLAUDE.md / AGENTS.md，注入系统提示（对照 Claude Code）。
   const projectContext = await loadProjectContext(workspaceRoot, options.cwd);
-  const agent = new AgentLoop({
-    provider: createModelProvider(providerName),
-    registry,
-    executor,
-    sessions: new SessionStore(path.join(options.cwd, ".sessions")),
+  const systemPrompt = buildSystemPrompt(workspaceRoot, skills, projectContext);
+
+  // --- 子代理：用“不含 spawn_agent 的工具子集”构建独立执行器，杜绝递归；注册到主 registry。---
+  const childRegistry = new ToolRegistry();
+  for (const childTool of registry.list()) childRegistry.register(childTool);
+  const childExecutor = new ToolExecutor({
+    cwd: workspaceRoot,
+    registry: childRegistry,
+    policy,
     events,
-    systemPrompt: buildSystemPrompt(workspaceRoot, skills, projectContext),
+    hooks: hookRunner.hasAny ? hookRunner : undefined,
+    checkpoint: checkpoints,
   });
+  registry.register(
+    createSpawnAgentTool({ provider, registry: childRegistry, executor: childExecutor, sessions, events, systemPrompt }),
+  );
+
+  const agent = new AgentLoop({ provider, registry, executor, sessions, events, systemPrompt });
 
   return {
     agent,
@@ -163,6 +182,7 @@ export async function createTideRuntime(options: {
     skills,
     skillsDir,
     hasProjectContext: projectContext !== null,
+    checkpoints,
     skillManager,
     async dispose() {
       await disposeMcp();

@@ -41,6 +41,9 @@ export const copyPathTool: Tool = {
       assertNotWorkspaceRoot(context.cwd, destinationPath, "overwrite");
     }
 
+    // 回滚备份：仅目标会变（源不动）。
+    await context.checkpoint?.backup(destinationPath);
+
     await mkdir(path.dirname(destinationPath), { recursive: true });
     if (sourceStat.isDirectory()) {
       if (!recursive) {

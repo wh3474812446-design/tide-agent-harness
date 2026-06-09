@@ -1,8 +1,15 @@
 import type { JsonSchema, ModelToolDefinition, RiskLevel } from "../types.js";
 
+/** 检查点备份接口：文件工具改动前调用，记录原始内容以便回滚。 */
+export interface CheckpointBackup {
+  backup(absolutePath: string): Promise<void>;
+}
+
 export interface ToolContext {
   cwd: string;
   signal: AbortSignal;
+  /** 可选：改动文件前用它备份原内容，供 /rewind 回滚。 */
+  checkpoint?: CheckpointBackup;
 }
 
 /** 工具来源标签，用于状态展示与可观测性（对照 Claude Code 的 built-in / mcp / 动态加载分类）。 */

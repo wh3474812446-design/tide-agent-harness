@@ -30,12 +30,17 @@ export const movePathTool: Tool = {
     const destinationPath = resolveInsideWorkspace(context.cwd, to);
     assertNotWorkspaceRoot(context.cwd, sourcePath, "move");
 
+    // 回滚备份：源（移动后消失）与目标（可能被覆盖）。目录移动为尽力而为。
+    await context.checkpoint?.backup(sourcePath);
     if (await exists(destinationPath)) {
       if (!overwrite) {
         throw new Error(`Destination already exists: ${to}`);
       }
       assertNotWorkspaceRoot(context.cwd, destinationPath, "overwrite");
+      await context.checkpoint?.backup(destinationPath);
       await rm(destinationPath, { recursive: true, force: true });
+    } else {
+      await context.checkpoint?.backup(destinationPath);
     }
 
     await mkdir(path.dirname(destinationPath), { recursive: true });

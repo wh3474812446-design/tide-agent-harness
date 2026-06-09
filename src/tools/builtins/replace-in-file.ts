@@ -33,6 +33,7 @@ export const replaceInFileTool: Tool = {
     if (first < 0) throw new Error("Search text was not found.");
     if (second >= 0) throw new Error("Search text occurs more than once; make it more specific.");
     const updated = `${content.slice(0, first)}${replacement}${content.slice(first + search.length)}`;
+    await context.checkpoint?.backup(filePath);
     await writeFile(filePath, updated, "utf8");
     return `Replaced one occurrence in ${path}.`;
   },

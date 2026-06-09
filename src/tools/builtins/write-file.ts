@@ -26,6 +26,7 @@ export const writeFileTool: Tool = {
   async execute(input, context) {
     const { path: requestedPath, content } = input as WriteFileInput;
     const filePath = resolveInsideWorkspace(context.cwd, requestedPath);
+    await context.checkpoint?.backup(filePath);
     await mkdir(path.dirname(filePath), { recursive: true });
     await writeFile(filePath, content, "utf8");
     return `Wrote ${content.length} characters to ${requestedPath}.`;
