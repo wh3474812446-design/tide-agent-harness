@@ -154,7 +154,7 @@ export async function createTideRuntime(options: {
   const sessions = new SessionStore(path.join(options.cwd, ".sessions"));
   // 项目记忆：自动加载工作区里的 CLAUDE.md / AGENTS.md，注入系统提示（对照 Claude Code）。
   const projectContext = await loadProjectContext(workspaceRoot, options.cwd);
-  const systemPrompt = buildSystemPrompt(workspaceRoot, skills, projectContext);
+  const systemPrompt = buildSystemPrompt(workspaceRoot, skills, projectContext, provider.model ?? null);
 
   // --- 子代理：用“不含 spawn_agent 的工具子集”构建独立执行器，杜绝递归；注册到主 registry。---
   const childRegistry = new ToolRegistry();

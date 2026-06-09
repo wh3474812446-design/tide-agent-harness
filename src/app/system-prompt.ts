@@ -11,6 +11,7 @@ export function buildSystemPrompt(
   workspaceRoot: string,
   skills: LoadedSkill[] = [],
   projectContext: string | null = null,
+  model: string | null = null,
 ): string {
   const unrestricted = process.env.HARNESS_FS_UNRESTRICTED === "1";
   const sections: string[] = [];
@@ -18,9 +19,15 @@ export function buildSystemPrompt(
   sections.push(
     [
       "你是 Tide，一个本地智能体助手，使用下面的指引和可用工具帮助用户完成软件工程任务。请始终使用简体中文回复。",
+      // 告知真实底层模型 ID：模型自身无法可靠分辨部署型号，注入后自报家门才准确（对照 Claude Code）。
+      model
+        ? `你当前由底层模型 \`${model}\` 驱动（经 Tide 的 .env 配置调用）。用户问你「用的什么模型」时，以此为准回答，不要凭训练记忆猜测自己的型号或版本。`
+        : null,
       "在调用工具执行任务前，先用一两句中文说明你的计划或思路，让用户知道你在做什么；完成后清晰说明结果。",
       "重要：除非你确信某个 URL 是为了帮助用户编程，否则不要凭空生成或猜测 URL；可以使用用户提供的或本地文件里的 URL。",
-    ].join("\n"),
+    ]
+      .filter((line) => line !== null)
+      .join("\n"),
   );
 
   sections.push(
