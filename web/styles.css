@@ -163,21 +163,23 @@ h1 {
 
 .left-rail,
 .right-rail {
-  display: grid;
   overflow: auto;
   min-width: 0;
   min-height: 0;
-  gap: 22px;
   padding: 22px 24px;
   background: var(--rail);
 }
 
 .left-rail {
-  grid-template-rows: auto auto minmax(0, 1fr);
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
   border-right: 1px solid var(--line);
 }
 
 .right-rail {
+  display: grid;
+  gap: 22px;
   border-left: 1px solid var(--line);
 }
 
@@ -197,6 +199,9 @@ h1 {
 
 .runtime-panel,
 .model-panel,
+.workspace-panel,
+.mcp-panel,
+.skills-panel,
 .tools-panel,
 .events-panel {
   border-color: var(--line);
@@ -334,6 +339,11 @@ h1 {
   min-width: 0;
   min-height: 0;
   max-height: 100%;
+}
+
+/* 左栏用 flex 纵向堆叠，工具列表给个上限并内部滚动，避免撑长整栏 */
+.left-rail .tool-list {
+  max-height: 320px;
 }
 
 .tool-item {
