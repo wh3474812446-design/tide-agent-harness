@@ -131,8 +131,9 @@ export async function createTideRuntime(options: {
     allow: allowedRisks,
     approval: options.approval,
   });
-  // --- Hooks：加载 hooks.json（PreToolUse/PostToolUse），有规则才挂到执行器上。---
-  const hooksConfig = await loadHooksConfig(await resolveConfigPath("hooks.json", options.cwd, configRoot));
+  // --- Hooks：加载 hooks 配置（PreToolUse/PostToolUse），有规则才挂到执行器上。---
+  const hooksFile = process.env.HARNESS_HOOKS_CONFIG ?? "hooks.json";
+  const hooksConfig = await loadHooksConfig(await resolveConfigPath(hooksFile, options.cwd, configRoot));
   const hookRunner = new HookRunner(hooksConfig, workspaceRoot);
   const checkpoints = new CheckpointStore();
   const executor = new ToolExecutor({

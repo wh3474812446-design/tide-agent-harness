@@ -1,0 +1,15 @@
+{
+  "_comment": "复制到项目根目录改名 hooks.json 即生效（或用 HARNESS_HOOKS_CONFIG 指定）。matcher 是匹配工具名的正则，省略或 \"*\" 匹配所有工具。命令里可读环境变量 TIDE_TOOL_NAME / TIDE_TOOL_INPUT（PostToolUse 还有 TIDE_TOOL_OUTPUT）。",
+  "PreToolUse": [
+    {
+      "matcher": "run_command",
+      "command": "echo 即将执行命令: %TIDE_TOOL_NAME%"
+    }
+  ],
+  "PostToolUse": [
+    {
+      "matcher": "write_file|replace_in_file",
+      "command": "echo 文件已改动，可在此自动跑 lint/格式化"
+    }
+  ]
+}
