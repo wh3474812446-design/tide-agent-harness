@@ -111,9 +111,21 @@ try {
   } else {
     await runInteractiveChat(agent, terminal);
   }
+} catch (error) {
+  // 一次性模式下模型/网络报错时优雅提示，而不是抛出整页堆栈。
+  console.log(ui.errorLine(describeError(error)));
+  process.exitCode = 1;
 } finally {
   terminal.close();
   await runtime.dispose();
+}
+
+/** 把错误（含 fetch 的 cause）格式化成一行可读信息。 */
+function describeError(error: unknown): string {
+  if (!(error instanceof Error)) return String(error);
+  const cause = (error as { cause?: unknown }).cause;
+  const causeMsg = cause instanceof Error ? `（${cause.message}）` : "";
+  return `${error.message}${causeMsg}`;
 }
 
 function printStats(result: {
@@ -190,7 +202,7 @@ async function runInteractiveChat(
       if (!stream.didStream) console.log(ui.assistant(result.finalText));
       console.log(printStats(result));
     } catch (error) {
-      console.log(ui.errorLine(error instanceof Error ? error.message : String(error)));
+      console.log(ui.errorLine(describeError(error)));
     }
   }
   console.log(ui.note("再见 👋"));
