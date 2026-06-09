@@ -177,6 +177,12 @@ h1 {
   border-right: 1px solid var(--line);
 }
 
+/* 关键：固定高度的 flex 容器默认会压扁子项，导致内容溢出叠在一起。
+   禁止面板被压缩，让它们保持自然高度，整栏靠 overflow:auto 滚动。 */
+.left-rail > .panel {
+  flex: 0 0 auto;
+}
+
 .right-rail {
   display: grid;
   gap: 22px;
