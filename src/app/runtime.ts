@@ -20,6 +20,9 @@ import { HookRunner, loadHooksConfig } from "../hooks/hooks.js";
 import { CheckpointStore } from "../checkpoint/checkpoint.js";
 import type { LoadedSkill } from "../skills/skill-loader.js";
 import { getModelPreset } from "./model-config.js";
+import { buildSystemPrompt } from "./system-prompt.js";
+import { ContextManager } from "../context/context-manager.js";
+import { createTodoWriteTool } from "../tools/builtins/todo-write.js";
 
 export interface TideRuntime {
   agent: AgentLoop;
@@ -66,6 +69,8 @@ export async function createTideRuntime(options: {
 }): Promise<TideRuntime> {
   const events = options.events ?? new EventBus();
   const registry = createDefaultToolRegistry();
+  // Todo 清单工具：需要 events 来把更新同步到网页面板，所以在此注册（非纯内置）。
+  registry.register(createTodoWriteTool({ events }));
   const configRoot = options.configRoot ? path.resolve(options.configRoot) : options.cwd;
   const apiToolsFile = process.env.HARNESS_API_TOOLS;
   let loadedApiTools = 0;
@@ -166,15 +171,22 @@ export async function createTideRuntime(options: {
     createSpawnAgentTool({ provider, registry: childRegistry, executor: childExecutor, sessions, events, systemPrompt }),
   );
 
+  // 上下文管理：超预算自动摘要式压缩（替代旧的直接截断）。预算可用 HARNESS_CONTEXT_TOKENS 调。
+  const context = new ContextManager({
+    maxApproxTokens: positiveIntEnv("HARNESS_CONTEXT_TOKENS", 48_000),
+    keepRecentTokens: positiveIntEnv("HARNESS_KEEP_RECENT_TOKENS", 12_000),
+  });
   const agent = new AgentLoop({
     provider,
     registry,
     executor,
     sessions,
     events,
+    context,
     systemPrompt,
-    maxTurns: positiveIntEnv("HARNESS_MAX_TURNS", 12),
-    maxToolCalls: positiveIntEnv("HARNESS_MAX_TOOL_CALLS", 30),
+    // 上限调高（旧默认 12/30 会在真实项目中途被掐断）：配合自动压缩，长任务现在能安全跑完。
+    maxTurns: positiveIntEnv("HARNESS_MAX_TURNS", 100),
+    maxToolCalls: positiveIntEnv("HARNESS_MAX_TOOL_CALLS", 400),
   });
 
   return {
@@ -288,46 +300,6 @@ async function loadProjectContext(workspaceRoot: string, cwd: string): Promise<s
     }
   }
   return null;
-}
-
-function buildSystemPrompt(
-  workspaceRoot: string,
-  skills: LoadedSkill[] = [],
-  projectContext: string | null = null,
-): string {
-  const unrestricted = process.env.HARNESS_FS_UNRESTRICTED === "1";
-  const lines = [
-    "你是 Tide，一个本地智能体助手。请始终使用简体中文回复。",
-    "在调用工具执行任务之前，先用一两句中文简要说明你的计划或思路，让用户知道你在做什么；完成后清晰说明结果。",
-    "需要时才调用工具，并遵守当前的风险权限策略。",
-    `当前文件工作区根目录是：${workspaceRoot}`,
-  ];
-  if (unrestricted) {
-    lines.push(
-      "文件工具已放开整机访问：你可以使用绝对路径在电脑任意位置读写、创建、移动文件或文件夹。",
-      `例如桌面通常位于：${workspaceRoot}\\Desktop。在桌面创建文件夹时，请传入完整绝对路径或相对工作区根的路径。`,
-      "这是高风险能力，操作前请确认路径正确，避免误删或覆盖用户的重要文件。",
-    );
-  } else {
-    lines.push("文件工具仅限在工作区根目录内操作，超出范围会被拒绝。");
-  }
-  if (skills.length > 0) {
-    lines.push(
-      "",
-      "你安装了以下技能（skill）。当用户的请求匹配某个技能时，先用 skill 工具加载它的指令，再照做：",
-      ...skills.map((s) => `  - ${s.name}：${s.description}`),
-    );
-  }
-  if (projectContext) {
-    lines.push(
-      "",
-      "以下是当前项目的说明文档，请在工作时遵循其中的约定：",
-      "----------",
-      projectContext,
-      "----------",
-    );
-  }
-  return lines.join("\n");
 }
 
 function createModelProvider(provider: string): ModelProvider {

@@ -58,19 +58,26 @@ export class AgentLoop {
     const reasoningParts: string[] = [];
     const totalUsage: TokenUsage = { inputTokens: 0, outputTokens: 0 };
     for (let turn = 1; turn <= this.#maxTurns; turn += 1) {
-      const context = this.#context.prepare(session.messages);
-      if (context.compacted) {
-        this.#events.emit({
-          type: "context.compacted",
-          before: context.beforeTokens,
-          after: context.afterTokens,
-        });
+      // 超预算时先做摘要式压缩，并把压缩结果写回会话（持久化），下一轮在压缩后的历史上继续。
+      if (this.#context.shouldCompact(session.messages)) {
+        const compacted = await this.#context.compact(session.messages, (systemPrompt, transcript) =>
+          this.#summarize(systemPrompt, transcript, options?.signal),
+        );
+        if (compacted.compacted) {
+          session.messages = compacted.messages;
+          await this.#save(session);
+          this.#events.emit({
+            type: "context.compacted",
+            before: compacted.beforeTokens,
+            after: compacted.afterTokens,
+          });
+        }
       }
 
       this.#events.emit({ type: "model.requested", turn });
       const request = {
         systemPrompt: this.#systemPrompt,
-        messages: context.messages,
+        messages: session.messages,
         tools: this.#registry.definitions(),
         signal: options?.signal,
       };
@@ -120,6 +127,26 @@ export class AgentLoop {
     // 轮数耗尽：同样优雅返回，而不是抛错把整段对话作废。
     const note = `（已达最大对话轮数 ${this.#maxTurns}，任务可能未完成。可在 .env 设 HARNESS_MAX_TURNS 调高，或把任务拆小、给出更明确的指令重试。）`;
     return this.#finish(session, joinNote(lastText, note), reasoningParts, this.#maxTurns, toolCalls, totalUsage);
+  }
+
+  /**
+   * 压缩用的摘要调用：不带工具、单轮 complete。把较早对话的转录作为唯一用户消息，
+   * 用 CC 的压缩 system prompt 让模型产出结构化摘要。失败由 ContextManager 兜底回退。
+   */
+  async #summarize(systemPrompt: string, transcript: string, signal?: AbortSignal): Promise<string> {
+    const response = await this.#provider.complete({
+      systemPrompt,
+      messages: [{ role: "user", content: [{ type: "text", text: transcript }] }],
+      tools: [],
+      signal,
+    });
+    const text = response.content
+      .filter((block) => block.type === "text")
+      .map((block) => block.text)
+      .join("\n")
+      .trim();
+    if (!text) throw new Error("Empty summary from model.");
+    return text;
   }
 
   /** 统一构建返回结果并发 agent.finished 事件。 */

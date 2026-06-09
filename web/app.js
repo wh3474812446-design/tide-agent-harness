@@ -598,6 +598,12 @@ function renderEvents() {
 }
 
 function eventDetail(event) {
+  if ("todos" in event && Array.isArray(event.todos)) {
+    const done = event.todos.filter((t) => t.status === "completed").length;
+    const active = event.todos.find((t) => t.status === "in_progress");
+    const head = `${done}/${event.todos.length} 完成`;
+    return active ? `${head} · ▸ ${active.content}` : head;
+  }
   if ("server" in event) {
     if ("tools" in event) return `${event.server}（${event.tools} 工具）`;
     if ("error" in event) return `${event.server}：${event.error}`;
@@ -780,6 +786,7 @@ function eventLabel(type) {
     "tool.started": "工具开始",
     "tool.finished": "工具完成",
     "context.compacted": "上下文压缩",
+    "todos.updated": "任务清单",
     "agent.finished": "任务完成",
     "mcp.connecting": "MCP 连接中",
     "mcp.connected": "MCP 已连接",

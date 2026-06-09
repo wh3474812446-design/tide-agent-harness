@@ -11,6 +11,8 @@
 - 🖥️ **浏览器控制台**：聊天、模型配置、工具列表、实时事件流、思考过程可视化。
 - 🧰 **本地工具**：读写/复制/移动/删除文件与文件夹、执行 shell 命令（含后台长任务）、`grep`/`glob` 全代码库搜索、调用可配置的 HTTP API。
 - 🧠 **项目级上下文**：启动自动加载工作区 `CLAUDE.md` / `AGENTS.md`；`read_file` 带行号与区间读取，编辑更精准。
+- ♻️ **自动上下文压缩**：长对话超预算时，把较早消息用模型摘要成结构化总结、最近消息原样保留（对照 Claude Code 的 auto-compact），长任务不丢早期需求/决策/踩坑——而非简单截断。
+- ✅ **任务清单防跑偏**：`todo_write` 工具让模型把多步任务外化成清单，逐项 in_progress / completed，做完前自检验证；网页事件流实时显示进度。轮数/工具上限默认调高到 100/400，配合压缩可安全跑完项目级长任务。
 - ⌨️ **终端界面**：`npm link` 后用 `tide` 命令在任意目录启动，Claude Code 风格的本地智能体终端。
 - 🔌 **MCP 协议接入**：用官方 `@modelcontextprotocol/sdk` 连接任意 MCP server（filesystem、fetch、github…），其工具自动桥接成 `mcp__<server>__<tool>` 供模型调用，支持 stdio / HTTP / SSE 三种传输。
 - 🧩 **技能（Skill）系统**：从本地目录或 git URL 安装技能（含 `SKILL.md` 的文件夹），模型按需用 `skill` 工具加载指令；也能用 `install_skill` 工具自己装技能。**热加载——安装即用，无需重启**；网页左栏有 MCP / 技能面板可视化管理。
@@ -92,6 +94,8 @@ API Key 只保存在本地 `.env`，**不会上传**。
 | 调用本机 CLI | ✅ | 通过 `run_command` 调用 PATH 上任意 CLI（gh、curl、python…），可传 key 鉴权 |
 | 读写本地文件 / 整机访问 | ✅ | 内置文件工具（`read_file` 带行号 + offset/limit 区间读）+ 可放开到整台电脑 |
 | 读取项目约定 | ✅ | 启动时自动加载工作区 `CLAUDE.md` / `AGENTS.md` 注入系统提示 |
+| 长任务上下文不丢 | ✅ | 超预算自动摘要式压缩（模型摘要较早对话 + 保留最近消息），对照 Claude Code auto-compact；可用 `HARNESS_CONTEXT_TOKENS` 调 |
+| 多步任务防跑偏/漏步 | ✅ | `todo_write` 清单工具 + 行为引导提示（逐项完成、做完自检验证、如实汇报），轮数/工具上限默认 100/400 |
 | 终端里直接对话 | ✅ | `npm link` 后用 `tide` 命令在任意目录启动，Claude Code 风格的终端界面 |
 | 流式输出 | ✅ | OpenAI 兼容 provider SSE 流式，CLI 边收边打字 |
 | 联网抓取 / 搜索 | ✅ | `web_fetch`（抓网页转文本）+ `web_search`（DuckDuckGo 免 key） |

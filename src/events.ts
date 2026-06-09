@@ -8,6 +8,7 @@ export type HarnessEvent =
   | { type: "tool.started"; id: string; name: string }
   | { type: "tool.finished"; id: string; name: string; isError: boolean }
   | { type: "context.compacted"; before: number; after: number }
+  | { type: "todos.updated"; todos: Array<{ content: string; status: "pending" | "in_progress" | "completed" }> }
   | { type: "agent.finished"; turns: number; toolCalls: number; inputTokens: number; outputTokens: number }
   | { type: "mcp.connecting"; server: string }
   | { type: "mcp.connected"; server: string; tools: number }
