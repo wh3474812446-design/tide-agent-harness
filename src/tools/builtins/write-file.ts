@@ -1,7 +1,8 @@
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { Tool } from "../tool.js";
 import { resolveInsideWorkspace } from "./path-utils.js";
+import { formatWriteDiff } from "./diff.js";
 
 interface WriteFileInput {
   path: string;
@@ -28,6 +29,12 @@ export const writeFileTool: Tool = {
     await mkdir(path.dirname(filePath), { recursive: true });
     await writeFile(filePath, content, "utf8");
     return `Wrote ${content.length} characters to ${requestedPath}.`;
+  },
+  async preview(input, context) {
+    const { path: requestedPath, content } = input as WriteFileInput;
+    const filePath = resolveInsideWorkspace(context.cwd, requestedPath);
+    const existing = await readFile(filePath, "utf8").catch(() => null);
+    return formatWriteDiff(requestedPath, existing, content);
   },
 };
 

@@ -14,6 +14,7 @@ import { createDefaultToolRegistry } from "../tools/builtins/index.js";
 import { ToolExecutor } from "../tools/executor.js";
 import { registerMcpServersFromFile, type McpServerStatus } from "../mcp/mcp-manager.js";
 import { setupSkills, type SkillManager } from "../skills/index.js";
+import { HookRunner, loadHooksConfig } from "../hooks/hooks.js";
 import type { LoadedSkill } from "../skills/skill-loader.js";
 import { getModelPreset } from "./model-config.js";
 
@@ -24,6 +25,8 @@ export interface TideRuntime {
   loadedApiTools: number;
   providerName: string;
   allowedRisks: RiskLevel[];
+  /** 风险策略对象（CLI 可切换计划模式等）。 */
+  policy: RiskPolicy;
   workspaceRoot: string;
   fsUnrestricted: boolean;
   /** 已连接的 MCP 服务器状态（含失败原因）。 */
@@ -123,7 +126,16 @@ export async function createTideRuntime(options: {
     allow: allowedRisks,
     approval: options.approval,
   });
-  const executor = new ToolExecutor({ cwd: workspaceRoot, registry, policy, events });
+  // --- Hooks：加载 hooks.json（PreToolUse/PostToolUse），有规则才挂到执行器上。---
+  const hooksConfig = await loadHooksConfig(await resolveConfigPath("hooks.json", options.cwd, configRoot));
+  const hookRunner = new HookRunner(hooksConfig, workspaceRoot);
+  const executor = new ToolExecutor({
+    cwd: workspaceRoot,
+    registry,
+    policy,
+    events,
+    hooks: hookRunner.hasAny ? hookRunner : undefined,
+  });
   const providerName = modelProviderName();
   // 项目记忆：自动加载工作区里的 CLAUDE.md / AGENTS.md，注入系统提示（对照 Claude Code）。
   const projectContext = await loadProjectContext(workspaceRoot, options.cwd);
@@ -143,6 +155,7 @@ export async function createTideRuntime(options: {
     loadedApiTools,
     providerName,
     allowedRisks,
+    policy,
     workspaceRoot,
     fsUnrestricted: process.env.HARNESS_FS_UNRESTRICTED === "1",
     mcpServers,

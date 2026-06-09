@@ -1,4 +1,5 @@
 import { stdout } from "node:process";
+import { formatCost } from "../model/pricing.js";
 
 const useColor = Boolean(stdout.isTTY) && !process.env.NO_COLOR;
 
@@ -42,7 +43,7 @@ export function banner(info: {
       (info.skills ? dim(` · 技能 ${info.skills}`) : "") +
       (info.projectContext ? green(" · 已载项目记忆") : ""),
     `  ${line}`,
-    `  ${dim("输入消息开始对话。命令：")} ${cyan("/new")} ${dim("新会话")}  ${cyan("/exit")} ${dim("退出")}`,
+    `  ${dim("命令：")} ${cyan("/new")} ${dim("新会话")}  ${cyan("/plan")} ${dim("计划模式")}  ${cyan("/rewind")} ${dim("回滚")}  ${cyan("/exit")} ${dim("退出")}`,
     "",
   ];
   return rows.join("\n");
@@ -53,10 +54,14 @@ export function promptLabel(): string {
   return color.cyan("› ");
 }
 
-/** 助手回复块。 */
+/** 助手回复表头（流式时单独打印）。 */
+export function assistantHeader(): string {
+  return color.bold(color.cyan("≈ Tide"));
+}
+
+/** 助手回复块（非流式时一次性打印）。 */
 export function assistant(text: string): string {
-  const head = color.bold(color.cyan("≈ Tide"));
-  return `\n${head}\n${text}\n`;
+  return `\n${assistantHeader()}\n${text}\n`;
 }
 
 /** 工具调用：开始。 */
@@ -80,7 +85,30 @@ export function errorLine(text: string): string {
   return color.red(`  ✗ ${text}`);
 }
 
+/** 渲染编辑预览：+ 行绿、- 行红，其余暗色，整体缩进。 */
+export function diff(preview: string): string {
+  return preview
+    .split("\n")
+    .map((line) => {
+      if (line.startsWith("+ ")) return color.green(`  ${line}`);
+      if (line.startsWith("- ")) return color.red(`  ${line}`);
+      return color.dim(`  ${line}`);
+    })
+    .join("\n");
+}
+
 /** 会话结束的统计行。 */
-export function stats(turns: number, toolCalls: number, sessionId: string): string {
-  return color.gray(`  ${turns} 轮 · ${toolCalls} 次工具调用 · 会话 ${sessionId.slice(0, 8)}`);
+export function stats(opts: {
+  turns: number;
+  toolCalls: number;
+  sessionId: string;
+  inputTokens: number;
+  outputTokens: number;
+  costUsd?: number;
+}): string {
+  const tokens = `${opts.inputTokens}↑/${opts.outputTokens}↓ tok`;
+  const cost = opts.costUsd !== undefined ? ` · ~${formatCost(opts.costUsd)}` : "";
+  return color.gray(
+    `  ${opts.turns} 轮 · ${opts.toolCalls} 次工具 · ${tokens}${cost} · 会话 ${opts.sessionId.slice(0, 8)}`,
+  );
 }

@@ -46,6 +46,10 @@ export class AnthropicProvider implements ModelProvider {
     };
   }
 
+  get model(): string {
+    return this.#options.model;
+  }
+
   async complete(request: ModelRequest): Promise<ModelResponse> {
     const response = await fetch(this.#options.baseUrl, {
       method: "POST",

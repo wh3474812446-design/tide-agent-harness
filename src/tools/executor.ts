@@ -1,5 +1,6 @@
 import AjvImport, { type ErrorObject, type ValidateFunction } from "ajv";
 import { EventBus } from "../events.js";
+import { HookRunner } from "../hooks/hooks.js";
 import { RiskPolicy } from "../policy/policy.js";
 import type { ToolCallBlock, ToolResultBlock } from "../types.js";
 import type { Tool } from "./tool.js";
@@ -12,6 +13,8 @@ interface ToolExecutorOptions {
   events?: EventBus;
   timeoutMs?: number;
   maxOutputChars?: number;
+  /** 可选 Hooks：工具执行前后跑命令；PreToolUse 非零退出可拦截。 */
+  hooks?: HookRunner;
 }
 
 interface AjvInstance {
@@ -28,6 +31,7 @@ export class ToolExecutor {
   readonly #events: EventBus;
   readonly #timeoutMs: number;
   readonly #maxOutputChars: number;
+  readonly #hooks?: HookRunner;
   readonly #ajv = new Ajv({ allErrors: true, strict: false });
   readonly #validators = new Map<string, ValidateFunction>();
 
@@ -38,6 +42,7 @@ export class ToolExecutor {
     this.#events = options.events ?? new EventBus();
     this.#timeoutMs = options.timeoutMs ?? 60000;
     this.#maxOutputChars = options.maxOutputChars ?? 30000;
+    this.#hooks = options.hooks;
   }
 
   async executeAll(calls: ToolCallBlock[], parentSignal?: AbortSignal): Promise<ToolResultBlock[]> {
@@ -69,9 +74,23 @@ export class ToolExecutor {
       const tool = this.#registry.get(call.name);
       if (!tool) throw new Error(`Unknown tool: ${call.name}`);
       this.#validate(tool, call.input);
-      const decision = await this.#policy.decide(tool, call.input);
+
+      // PreToolUse hook：可拦截工具调用。
+      if (this.#hooks) {
+        const pre = await this.#hooks.runPreToolUse(call.name, call.input);
+        if (pre.block) throw new Error(pre.reason ?? `被 PreToolUse hook 拦截：${call.name}`);
+      }
+
+      // 审批前算预览（如编辑 diff），仅在需要审批时才值得算。
+      const preview = await this.#preview(tool, call.input, parentSignal);
+      const decision = await this.#policy.decide(tool, call.input, preview);
       if (!decision.allowed) throw new Error(`Permission denied: ${decision.reason}`);
+
       const output = await this.#runWithTimeout(tool, call.input, parentSignal);
+
+      // PostToolUse hook：执行后跑命令（如自动 lint/格式化），失败不影响结果。
+      if (this.#hooks) await this.#hooks.runPostToolUse(call.name, call.input, output);
+
       const result = this.#result(call, this.#truncate(output, tool.maxResultChars), false);
       this.#events.emit({ type: "tool.finished", id: call.id, name: call.name, isError: false });
       return result;
@@ -80,6 +99,16 @@ export class ToolExecutor {
       const result = this.#result(call, this.#truncate(message), true);
       this.#events.emit({ type: "tool.finished", id: call.id, name: call.name, isError: true });
       return result;
+    }
+  }
+
+  /** 调工具自带的 preview() 生成审批预览；不实现或出错则返回 undefined。 */
+  async #preview(tool: Tool, input: unknown, parentSignal?: AbortSignal): Promise<string | undefined> {
+    if (!tool.preview) return undefined;
+    try {
+      return await tool.preview(input, { cwd: this.#cwd, signal: parentSignal ?? new AbortController().signal });
+    } catch {
+      return undefined;
     }
   }
 

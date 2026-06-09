@@ -10,6 +10,8 @@ import { movePathTool } from "./move-path.js";
 import { readFileTool } from "./read-file.js";
 import { replaceInFileTool } from "./replace-in-file.js";
 import { runCommandTool } from "./run-command.js";
+import { webFetchTool } from "./web-fetch.js";
+import { webSearchTool } from "./web-search.js";
 import { writeFileTool } from "./write-file.js";
 
 export function createDefaultToolRegistry(): ToolRegistry {
@@ -27,6 +29,8 @@ export function createDefaultToolRegistry(): ToolRegistry {
     replaceInFileTool,
     runCommandTool,
     getCommandOutputTool,
+    webFetchTool,
+    webSearchTool,
   ]) {
     registry.register(tool);
   }

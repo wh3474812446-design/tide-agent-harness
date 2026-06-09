@@ -3,10 +3,12 @@ export type HarnessEvent =
   | { type: "session.saved"; sessionId: string }
   | { type: "model.requested"; turn: number }
   | { type: "model.responded"; turn: number; stopReason?: string }
+  | { type: "model.delta"; turn: number; text: string }
+  | { type: "model.usage"; turn: number; inputTokens: number; outputTokens: number }
   | { type: "tool.started"; id: string; name: string }
   | { type: "tool.finished"; id: string; name: string; isError: boolean }
   | { type: "context.compacted"; before: number; after: number }
-  | { type: "agent.finished"; turns: number; toolCalls: number }
+  | { type: "agent.finished"; turns: number; toolCalls: number; inputTokens: number; outputTokens: number }
   | { type: "mcp.connecting"; server: string }
   | { type: "mcp.connected"; server: string; tools: number }
   | { type: "mcp.failed"; server: string; error: string }

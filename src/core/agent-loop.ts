@@ -2,9 +2,10 @@ import { ContextManager } from "../context/context-manager.js";
 import { EventBus } from "../events.js";
 import type { ModelProvider } from "../model/provider.js";
 import type { Session, SessionStore } from "../session/session-store.js";
-import type { AgentResult, Message, ToolCallBlock } from "../types.js";
+import type { AgentResult, Message, TokenUsage, ToolCallBlock } from "../types.js";
 import { ToolExecutor } from "../tools/executor.js";
 import { ToolRegistry } from "../tools/tool.js";
+import { estimateCost } from "../model/pricing.js";
 
 interface AgentLoopOptions {
   provider: ModelProvider;
@@ -54,6 +55,7 @@ export class AgentLoop {
 
     let toolCalls = 0;
     const reasoningParts: string[] = [];
+    const totalUsage: TokenUsage = { inputTokens: 0, outputTokens: 0 };
     for (let turn = 1; turn <= this.#maxTurns; turn += 1) {
       const context = this.#context.prepare(session.messages);
       if (context.compacted) {
@@ -65,13 +67,25 @@ export class AgentLoop {
       }
 
       this.#events.emit({ type: "model.requested", turn });
-      const response = await this.#provider.complete({
+      const request = {
         systemPrompt: this.#systemPrompt,
         messages: context.messages,
         tools: this.#registry.definitions(),
         signal: options?.signal,
-      });
+      };
+      // 有流式接口就用流式（边收边发 model.delta 事件），否则退回一次性 complete。
+      const response = this.#provider.stream
+        ? await this.#provider.stream(request, {
+            onText: (delta) => this.#events.emit({ type: "model.delta", turn, text: delta }),
+          })
+        : await this.#provider.complete(request);
       this.#events.emit({ type: "model.responded", turn, stopReason: response.stopReason });
+
+      const inputTokens = response.usage?.inputTokens ?? 0;
+      const outputTokens = response.usage?.outputTokens ?? 0;
+      totalUsage.inputTokens += inputTokens;
+      totalUsage.outputTokens += outputTokens;
+      this.#events.emit({ type: "model.usage", turn, inputTokens, outputTokens });
       if (response.reasoning) reasoningParts.push(response.reasoning);
 
       const assistantMessage: Message = { role: "assistant", content: response.content };
@@ -86,7 +100,13 @@ export class AgentLoop {
           .filter((block) => block.type === "text")
           .map((block) => block.text)
           .join("\n");
-        this.#events.emit({ type: "agent.finished", turns: turn, toolCalls });
+        this.#events.emit({
+          type: "agent.finished",
+          turns: turn,
+          toolCalls,
+          inputTokens: totalUsage.inputTokens,
+          outputTokens: totalUsage.outputTokens,
+        });
         return {
           sessionId: session.id,
           finalText,
@@ -94,6 +114,8 @@ export class AgentLoop {
           turns: turn,
           toolCalls,
           messages: session.messages,
+          usage: totalUsage,
+          costUsd: this.#provider.model ? estimateCost(this.#provider.model, totalUsage) : undefined,
         };
       }
 

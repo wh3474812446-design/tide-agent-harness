@@ -6,7 +6,7 @@ import type {
   TextBlock,
   ToolCallBlock,
 } from "../types.js";
-import type { ModelProvider } from "./provider.js";
+import type { ModelProvider, StreamCallbacks } from "./provider.js";
 
 interface OpenAICompatibleProviderOptions {
   apiKey: string;
@@ -92,6 +92,10 @@ export class OpenAICompatibleProvider implements ModelProvider {
     };
   }
 
+  get model(): string {
+    return this.#options.model;
+  }
+
   async complete(request: ModelRequest): Promise<ModelResponse> {
     const response = await fetch(`${trimTrailingSlash(this.#options.baseUrl)}/chat/completions`, {
       method: "POST",
@@ -170,6 +174,107 @@ export class OpenAICompatibleProvider implements ModelProvider {
         inputTokens: body.usage?.prompt_tokens,
         outputTokens: body.usage?.completion_tokens,
       },
+    };
+  }
+
+  /** 流式实现：解析 SSE，边收边回调，结束后拼出完整 ModelResponse（含工具调用与 usage）。 */
+  async stream(request: ModelRequest, callbacks: StreamCallbacks): Promise<ModelResponse> {
+    const response = await fetch(`${trimTrailingSlash(this.#options.baseUrl)}/chat/completions`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        authorization: `Bearer ${this.#options.apiKey}`,
+      },
+      body: JSON.stringify({
+        model: this.#options.model,
+        messages: toOpenAIMessages(request.systemPrompt, request.messages),
+        max_tokens: this.#options.maxTokens,
+        stream: true,
+        stream_options: { include_usage: true },
+        ...(request.tools.length > 0
+          ? {
+              tools: request.tools.map((tool) => ({
+                type: "function",
+                function: {
+                  name: tool.name,
+                  description: tool.description,
+                  parameters: tool.inputSchema,
+                },
+              })),
+              tool_choice: "auto",
+            }
+          : {}),
+      }),
+      signal: request.signal,
+    });
+
+    if (!response.ok || !response.body) {
+      throw new Error(`OpenAI-compatible API error ${response.status}: ${await response.text()}`);
+    }
+
+    let text = "";
+    let reasoning = "";
+    let stopReason: string | undefined;
+    let usage: { prompt_tokens?: number; completion_tokens?: number } | undefined;
+    // 工具调用按 index 累积（参数是分片到达的 JSON 字符串）。
+    const toolAcc = new Map<number, { id?: string; name?: string; args: string }>();
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      let nl: number;
+      while ((nl = buffer.indexOf("\n")) >= 0) {
+        const line = buffer.slice(0, nl).trim();
+        buffer = buffer.slice(nl + 1);
+        if (!line.startsWith("data:")) continue;
+        const data = line.slice(5).trim();
+        if (data === "[DONE]") continue;
+        let chunk: any;
+        try {
+          chunk = JSON.parse(data);
+        } catch {
+          continue;
+        }
+        if (chunk.usage) usage = chunk.usage;
+        const choice = chunk.choices?.[0];
+        if (!choice) continue;
+        const delta = choice.delta ?? {};
+        if (typeof delta.content === "string" && delta.content) {
+          text += delta.content;
+          callbacks.onText?.(delta.content);
+        }
+        if (typeof delta.reasoning_content === "string" && delta.reasoning_content) {
+          reasoning += delta.reasoning_content;
+          callbacks.onReasoning?.(delta.reasoning_content);
+        }
+        for (const tc of delta.tool_calls ?? []) {
+          const idx = tc.index ?? 0;
+          const acc = toolAcc.get(idx) ?? { args: "" };
+          if (tc.id) acc.id = tc.id;
+          if (tc.function?.name) acc.name = tc.function.name;
+          if (tc.function?.arguments) acc.args += tc.function.arguments;
+          toolAcc.set(idx, acc);
+        }
+        if (choice.finish_reason) stopReason = choice.finish_reason;
+      }
+    }
+
+    const content: Array<TextBlock | ToolCallBlock> = [];
+    if (text) content.push({ type: "text", text });
+    for (const acc of toolAcc.values()) {
+      if (!acc.id || !acc.name) continue;
+      content.push({ type: "tool_call", id: acc.id, name: acc.name, input: parseToolArguments(acc.args || "{}") });
+    }
+
+    return {
+      content,
+      stopReason,
+      reasoning: reasoning || undefined,
+      usage: { inputTokens: usage?.prompt_tokens, outputTokens: usage?.completion_tokens },
     };
   }
 }

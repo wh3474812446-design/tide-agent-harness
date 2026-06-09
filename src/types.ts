@@ -52,6 +52,11 @@ export interface ModelResponse {
   };
 }
 
+export interface TokenUsage {
+  inputTokens: number;
+  outputTokens: number;
+}
+
 export interface AgentResult {
   sessionId: string;
   finalText: string;
@@ -59,5 +64,9 @@ export interface AgentResult {
   turns: number;
   toolCalls: number;
   messages: Message[];
+  /** 本次 run 累计的 token 用量（跨所有轮）。 */
+  usage: TokenUsage;
+  /** 估算费用（美元）；模型不在价目表时为 undefined。 */
+  costUsd?: number;
 }
 

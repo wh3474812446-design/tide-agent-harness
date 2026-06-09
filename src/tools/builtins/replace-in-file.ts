@@ -1,6 +1,7 @@
 import { readFile, writeFile } from "node:fs/promises";
 import type { Tool } from "../tool.js";
 import { resolveInsideWorkspace } from "./path-utils.js";
+import { formatReplaceDiff } from "./diff.js";
 
 interface ReplaceInput {
   path: string;
@@ -34,6 +35,10 @@ export const replaceInFileTool: Tool = {
     const updated = `${content.slice(0, first)}${replacement}${content.slice(first + search.length)}`;
     await writeFile(filePath, updated, "utf8");
     return `Replaced one occurrence in ${path}.`;
+  },
+  async preview(input) {
+    const { path, search, replacement } = input as ReplaceInput;
+    return formatReplaceDiff(path, search, replacement);
   },
 };
 

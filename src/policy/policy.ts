@@ -4,6 +4,8 @@ import type { Tool } from "../tools/tool.js";
 export interface ApprovalRequest {
   tool: Tool;
   input: unknown;
+  /** 可选：给用户看的预览（如编辑 diff），由执行器提前算好传入。 */
+  preview?: string;
 }
 
 export type ApprovalHandler = (request: ApprovalRequest) => Promise<boolean>;
@@ -17,6 +19,7 @@ export class RiskPolicy {
   readonly #allow = new Set<RiskLevel>();
   readonly #deny = new Set<RiskLevel>();
   readonly #approval?: ApprovalHandler;
+  #planMode = false;
 
   constructor(options?: {
     allow?: RiskLevel[];
@@ -28,7 +31,19 @@ export class RiskPolicy {
     this.#approval = options?.approval;
   }
 
-  async decide(tool: Tool, input: unknown): Promise<PolicyDecision> {
+  /** 计划模式：开启后只允许 read，写/执行/联网一律拦截（对照 Claude Code 的 plan mode）。 */
+  setPlanMode(on: boolean): void {
+    this.#planMode = on;
+  }
+
+  get planMode(): boolean {
+    return this.#planMode;
+  }
+
+  async decide(tool: Tool, input: unknown, preview?: string): Promise<PolicyDecision> {
+    if (this.#planMode && tool.risk !== "read") {
+      return { allowed: false, reason: `计划模式：暂不执行 ${tool.risk} 操作，请先给出计划等用户确认。` };
+    }
     if (this.#deny.has(tool.risk)) {
       return { allowed: false, reason: `${tool.risk} operations are denied by policy.` };
     }
@@ -38,7 +53,7 @@ export class RiskPolicy {
     if (!this.#approval) {
       return { allowed: false, reason: "Approval is required, but no approver is available." };
     }
-    const approved = await this.#approval({ tool, input });
+    const approved = await this.#approval({ tool, input, preview });
     return {
       allowed: approved,
       reason: approved ? "Approved by user." : "Denied by user.",

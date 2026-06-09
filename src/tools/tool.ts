@@ -15,6 +15,11 @@ export interface Tool {
   risk: RiskLevel;
   concurrencySafe: boolean;
   execute(input: unknown, context: ToolContext): Promise<string>;
+  /**
+   * 可选：执行前生成给用户看的预览（如写/改文件的 diff），用于审批界面。
+   * 对照 Claude Code 编辑前展示 diff 的体验。内部应吞掉异常返回 undefined，不影响执行。
+   */
+  preview?(input: unknown, context: ToolContext): Promise<string | undefined>;
   /** 工具来源标签（可选，默认 builtin）。 */
   source?: ToolSource;
   /**
