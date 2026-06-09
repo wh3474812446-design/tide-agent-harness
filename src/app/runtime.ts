@@ -49,13 +49,30 @@ export async function createTideRuntime(options: {
   cwd: string;
   events?: EventBus;
   approval?: ApprovalHandler;
+  /**
+   * 配置文件（api-tools / mcp.json / skills）的回退根目录，默认 = cwd。
+   * 用 `tide` 命令从任意目录启动时传入 Tide 安装目录：相对路径的配置先按 cwd 找、
+   * 找不到再回退到安装目录，这样安装目录 .env 里的相对路径不会因换目录而失效。
+   */
+  configRoot?: string;
 }): Promise<TideRuntime> {
   const events = options.events ?? new EventBus();
   const registry = createDefaultToolRegistry();
+  const configRoot = options.configRoot ? path.resolve(options.configRoot) : options.cwd;
   const apiToolsFile = process.env.HARNESS_API_TOOLS;
   let loadedApiTools = 0;
   if (apiToolsFile) {
-    loadedApiTools = await registerApiToolsFromFile(registry, path.resolve(options.cwd, apiToolsFile));
+    // 加载失败非致命：配置缺失/损坏不该让整个 Tide 崩溃（对照 MCP / 技能的容错）。
+    try {
+      const resolved = await resolveConfigPath(apiToolsFile, options.cwd, configRoot);
+      loadedApiTools = await registerApiToolsFromFile(registry, resolved);
+    } catch (error) {
+      events.emit({
+        type: "mcp.failed",
+        server: "api-tools",
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
   }
 
   // 文件工具的工作区根：默认是启动目录，可用 HARNESS_WORKSPACE 改成任意目录（如用户主目录）。
@@ -64,7 +81,7 @@ export async function createTideRuntime(options: {
     : options.cwd;
 
   // --- MCP：连接 mcp.json 里配置的服务器，把其工具桥接进 registry（失败非致命）。---
-  const mcpConfigPath = await resolveMcpConfigPath(options.cwd);
+  const mcpConfigPath = await resolveMcpConfigPath(options.cwd, configRoot);
   let mcpServers: McpServerStatus[] = [];
   let loadedMcpTools = 0;
   let disposeMcp: () => Promise<void> = async () => {};
@@ -85,7 +102,7 @@ export async function createTideRuntime(options: {
 
   // --- 技能：加载 skillsDir，注册 skill / install_skill 工具（失败非致命）。---
   const skillsDir = process.env.HARNESS_SKILLS_DIR
-    ? path.resolve(process.env.HARNESS_SKILLS_DIR)
+    ? await resolveConfigPath(process.env.HARNESS_SKILLS_DIR, options.cwd, configRoot)
     : path.join(options.cwd, "skills");
   let skills: LoadedSkill[] = [];
   let skillManager: SkillManager | undefined;
@@ -140,16 +157,38 @@ export async function createTideRuntime(options: {
   };
 }
 
-/** 解析 MCP 配置路径：优先 HARNESS_MCP_CONFIG，否则自动探测 <cwd>/mcp.json。 */
-async function resolveMcpConfigPath(cwd: string): Promise<string | undefined> {
+/** 解析 MCP 配置路径：优先 HARNESS_MCP_CONFIG（cwd→configRoot 回退），否则自动探测 <cwd>/mcp.json。 */
+async function resolveMcpConfigPath(cwd: string, configRoot: string): Promise<string | undefined> {
   const explicit = process.env.HARNESS_MCP_CONFIG;
-  if (explicit) return path.resolve(cwd, explicit);
+  if (explicit) return await resolveConfigPath(explicit, cwd, configRoot);
   const auto = path.join(cwd, "mcp.json");
   try {
     await access(auto);
     return auto;
   } catch {
     return undefined;
+  }
+}
+
+/**
+ * 解析配置文件路径：绝对路径直接用；相对路径先按 cwd 找，存在即用，
+ * 否则回退到 configRoot（Tide 安装目录）。两处都没有时返回 cwd 解析结果，让上层报清晰错误。
+ */
+async function resolveConfigPath(relOrAbs: string, cwd: string, configRoot: string): Promise<string> {
+  if (path.isAbsolute(relOrAbs)) return relOrAbs;
+  const fromCwd = path.resolve(cwd, relOrAbs);
+  try {
+    await access(fromCwd);
+    return fromCwd;
+  } catch {
+    // cwd 下没有，试安装目录
+  }
+  const fromConfigRoot = path.resolve(configRoot, relOrAbs);
+  try {
+    await access(fromConfigRoot);
+    return fromConfigRoot;
+  } catch {
+    return fromCwd;
   }
 }
 

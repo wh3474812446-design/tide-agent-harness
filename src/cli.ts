@@ -60,6 +60,7 @@ events.subscribe((event) => {
 
 const runtime = await createTideRuntime({
   cwd,
+  configRoot: tideRoot,
   events,
   approval: async ({ tool, input }) => {
     console.log(ui.note(`需要授权：${tool.name}（${tool.risk}）`));
