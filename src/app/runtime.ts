@@ -114,9 +114,11 @@ export async function createTideRuntime(options: {
   }
 
   // --- 技能：加载 skillsDir，注册 skill / install_skill 工具（失败非致命）。---
+  // 技能是 Tide 安装级能力（与工作目录无关），默认锚定到安装目录的 skills/，
+  // 这样从任意目录用 `tide` 启动、以及网页端，看到的都是同一份技能。
   const skillsDir = process.env.HARNESS_SKILLS_DIR
     ? await resolveConfigPath(process.env.HARNESS_SKILLS_DIR, options.cwd, configRoot)
-    : path.join(options.cwd, "skills");
+    : path.join(configRoot, "skills");
   let skills: LoadedSkill[] = [];
   let skillManager: SkillManager | undefined;
   try {

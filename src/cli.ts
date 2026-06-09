@@ -28,9 +28,10 @@ if (installFlagIndex !== -1) {
     console.error("Usage: tide --install-skill <local-dir-or-git-url> [--overwrite]");
     process.exit(1);
   }
+  // 与 runtime 一致：默认装到安装目录的 skills/，CLI 安装的技能网页端也能立即看到。
   const skillsDir = process.env.HARNESS_SKILLS_DIR
     ? path.resolve(process.env.HARNESS_SKILLS_DIR)
-    : path.join(cwd, "skills");
+    : path.join(tideRoot, "skills");
   try {
     const result = await installSkill(source, skillsDir, { overwrite: argv.includes("--overwrite") });
     console.log(
