@@ -4,17 +4,45 @@ import { stdin, stdout } from "node:process";
 import { AgentLoop } from "./core/agent-loop.js";
 import { EventBus } from "./events.js";
 import { createTideRuntime, loadTideEnv } from "./app/runtime.js";
+import { installSkill } from "./skills/index.js";
 
 const cwd = process.cwd();
 const loadedEnvCount = await loadTideEnv(cwd);
 if (loadedEnvCount > 0) console.log(`[config] loaded ${loadedEnvCount} value(s) from .env`);
 
-const prompt = process.argv.slice(2).join(" ").trim();
+const argv = process.argv.slice(2);
+
+// 子命令：tide --install-skill <本地目录或 git URL> [--overwrite]
+const installFlagIndex = argv.indexOf("--install-skill");
+if (installFlagIndex !== -1) {
+  const source = argv[installFlagIndex + 1];
+  if (!source) {
+    console.error("Usage: --install-skill <local-dir-or-git-url> [--overwrite]");
+    process.exit(1);
+  }
+  const skillsDir = process.env.HARNESS_SKILLS_DIR
+    ? path.resolve(process.env.HARNESS_SKILLS_DIR)
+    : path.join(cwd, "skills");
+  try {
+    const result = await installSkill(source, skillsDir, { overwrite: argv.includes("--overwrite") });
+    console.log(
+      `[skill] installed "${result.name}" -> ${result.dir}${result.overwritten ? " (overwritten)" : ""}`,
+    );
+    process.exit(0);
+  } catch (error) {
+    console.error(`[skill] install failed: ${error instanceof Error ? error.message : String(error)}`);
+    process.exit(1);
+  }
+}
+
+const prompt = argv.join(" ").trim();
 const terminal = createInterface({ input: stdin, output: stdout });
 const events = new EventBus();
 events.subscribe((event) => {
   if (event.type === "tool.started") console.log(`[tool] starting ${event.name}`);
   if (event.type === "tool.finished") console.log(`[tool] finished ${event.name}, error=${event.isError}`);
+  if (event.type === "mcp.connected") console.log(`[mcp] ${event.server}: ${event.tools} tool(s)`);
+  if (event.type === "mcp.failed") console.log(`[mcp] ${event.server} failed: ${event.error}`);
 });
 
 const runtime = await createTideRuntime({
@@ -28,6 +56,10 @@ const runtime = await createTideRuntime({
   },
 });
 if (runtime.loadedApiTools > 0) console.log(`[tools] loaded ${runtime.loadedApiTools} API tool(s)`);
+if (runtime.loadedMcpTools > 0) {
+  console.log(`[mcp] ${runtime.loadedMcpTools} tool(s) from ${runtime.mcpServers.filter((s) => s.ok).length} server(s)`);
+}
+if (runtime.skills.length > 0) console.log(`[skills] ${runtime.skills.length} skill(s) available`);
 const agent = runtime.agent;
 
 try {
@@ -39,6 +71,7 @@ try {
   }
 } finally {
   terminal.close();
+  await runtime.dispose();
 }
 
 async function runInteractiveChat(

@@ -1,0 +1,24 @@
+{
+  "_comment": "复制为项目根目录的 mcp.json，或用 HARNESS_MCP_CONFIG 指向本文件。Tide 启动时会连接这些 MCP 服务器并把它们的工具桥接成 mcp__<server>__<tool>。",
+  "mcpServers": {
+    "filesystem": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-filesystem", "C:\\Users\\Ice_2102\\Desktop"],
+      "risk": "write"
+    },
+    "fetch": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-fetch"],
+      "risk": "network",
+      "disabled": true
+    },
+    "remote-example": {
+      "type": "http",
+      "url": "https://example.com/mcp",
+      "headers": { "authorization": "Bearer {{YOUR_TOKEN}}" },
+      "disabled": true
+    }
+  }
+}

@@ -6,7 +6,13 @@ export type HarnessEvent =
   | { type: "tool.started"; id: string; name: string }
   | { type: "tool.finished"; id: string; name: string; isError: boolean }
   | { type: "context.compacted"; before: number; after: number }
-  | { type: "agent.finished"; turns: number; toolCalls: number };
+  | { type: "agent.finished"; turns: number; toolCalls: number }
+  | { type: "mcp.connecting"; server: string }
+  | { type: "mcp.connected"; server: string; tools: number }
+  | { type: "mcp.failed"; server: string; error: string }
+  | { type: "skill.loaded"; name: string }
+  | { type: "skill.invoked"; name: string }
+  | { type: "skill.installed"; name: string; source: string };
 
 export type EventListener = (event: HarnessEvent) => void;
 

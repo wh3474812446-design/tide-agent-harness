@@ -1,3 +1,4 @@
+import { access } from "node:fs/promises";
 import path from "node:path";
 import { loadEnvFile } from "../config/env.js";
 import { AgentLoop } from "../core/agent-loop.js";
@@ -11,6 +12,9 @@ import type { ModelToolDefinition, RiskLevel } from "../types.js";
 import { registerApiToolsFromFile } from "../tools/api/api-tool.js";
 import { createDefaultToolRegistry } from "../tools/builtins/index.js";
 import { ToolExecutor } from "../tools/executor.js";
+import { registerMcpServersFromFile, type McpServerStatus } from "../mcp/mcp-manager.js";
+import { setupSkills } from "../skills/index.js";
+import type { LoadedSkill } from "../skills/skill-loader.js";
 import { getModelPreset } from "./model-config.js";
 
 export interface TideRuntime {
@@ -22,6 +26,15 @@ export interface TideRuntime {
   allowedRisks: RiskLevel[];
   workspaceRoot: string;
   fsUnrestricted: boolean;
+  /** 已连接的 MCP 服务器状态（含失败原因）。 */
+  mcpServers: McpServerStatus[];
+  /** 已注册的 MCP 工具总数。 */
+  loadedMcpTools: number;
+  /** 已加载的技能。 */
+  skills: LoadedSkill[];
+  skillsDir: string;
+  /** 释放资源（关闭 MCP 子进程 / HTTP 会话）。退出前调用。 */
+  dispose(): Promise<void>;
 }
 
 export async function loadTideEnv(cwd: string): Promise<number> {
@@ -41,15 +54,52 @@ export async function createTideRuntime(options: {
     loadedApiTools = await registerApiToolsFromFile(registry, path.resolve(options.cwd, apiToolsFile));
   }
 
+  // 文件工具的工作区根：默认是启动目录，可用 HARNESS_WORKSPACE 改成任意目录（如用户主目录）。
+  const workspaceRoot = process.env.HARNESS_WORKSPACE
+    ? path.resolve(process.env.HARNESS_WORKSPACE)
+    : options.cwd;
+
+  // --- MCP：连接 mcp.json 里配置的服务器，把其工具桥接进 registry（失败非致命）。---
+  const mcpConfigPath = await resolveMcpConfigPath(options.cwd);
+  let mcpServers: McpServerStatus[] = [];
+  let loadedMcpTools = 0;
+  let disposeMcp: () => Promise<void> = async () => {};
+  if (mcpConfigPath) {
+    try {
+      const result = await registerMcpServersFromFile(registry, mcpConfigPath, events);
+      mcpServers = result.servers;
+      loadedMcpTools = result.registeredTools;
+      disposeMcp = result.dispose;
+    } catch (error) {
+      events.emit({
+        type: "mcp.failed",
+        server: path.basename(mcpConfigPath),
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
+  // --- 技能：加载 skillsDir，注册 skill / install_skill 工具（失败非致命）。---
+  const skillsDir = process.env.HARNESS_SKILLS_DIR
+    ? path.resolve(process.env.HARNESS_SKILLS_DIR)
+    : path.join(options.cwd, "skills");
+  let skills: LoadedSkill[] = [];
+  try {
+    const result = await setupSkills(registry, { skillsDir, events });
+    skills = result.skills;
+  } catch (error) {
+    events.emit({
+      type: "mcp.failed",
+      server: "skills",
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+
   const allowedRisks = parseAllowedRisks(process.env.HARNESS_ALLOW_RISKS);
   const policy = new RiskPolicy({
     allow: allowedRisks,
     approval: options.approval,
   });
-  // 文件工具的工作区根：默认是启动目录，可用 HARNESS_WORKSPACE 改成任意目录（如用户主目录）。
-  const workspaceRoot = process.env.HARNESS_WORKSPACE
-    ? path.resolve(process.env.HARNESS_WORKSPACE)
-    : options.cwd;
   const executor = new ToolExecutor({ cwd: workspaceRoot, registry, policy, events });
   const providerName = modelProviderName();
   const agent = new AgentLoop({
@@ -58,7 +108,7 @@ export async function createTideRuntime(options: {
     executor,
     sessions: new SessionStore(path.join(options.cwd, ".sessions")),
     events,
-    systemPrompt: buildSystemPrompt(workspaceRoot),
+    systemPrompt: buildSystemPrompt(workspaceRoot, skills),
   });
 
   return {
@@ -70,7 +120,27 @@ export async function createTideRuntime(options: {
     allowedRisks,
     workspaceRoot,
     fsUnrestricted: process.env.HARNESS_FS_UNRESTRICTED === "1",
+    mcpServers,
+    loadedMcpTools,
+    skills,
+    skillsDir,
+    async dispose() {
+      await disposeMcp();
+    },
   };
+}
+
+/** 解析 MCP 配置路径：优先 HARNESS_MCP_CONFIG，否则自动探测 <cwd>/mcp.json。 */
+async function resolveMcpConfigPath(cwd: string): Promise<string | undefined> {
+  const explicit = process.env.HARNESS_MCP_CONFIG;
+  if (explicit) return path.resolve(cwd, explicit);
+  const auto = path.join(cwd, "mcp.json");
+  try {
+    await access(auto);
+    return auto;
+  } catch {
+    return undefined;
+  }
 }
 
 export function parseAllowedRisks(value: string | undefined): RiskLevel[] {
@@ -92,7 +162,7 @@ function modelProviderName(): string {
   return (process.env.HARNESS_MODEL_PROVIDER ?? "deepseek").trim().toLowerCase();
 }
 
-function buildSystemPrompt(workspaceRoot: string): string {
+function buildSystemPrompt(workspaceRoot: string, skills: LoadedSkill[] = []): string {
   const unrestricted = process.env.HARNESS_FS_UNRESTRICTED === "1";
   const lines = [
     "你是 Tide，一个本地智能体助手。请始终使用简体中文回复。",
@@ -108,6 +178,13 @@ function buildSystemPrompt(workspaceRoot: string): string {
     );
   } else {
     lines.push("文件工具仅限在工作区根目录内操作，超出范围会被拒绝。");
+  }
+  if (skills.length > 0) {
+    lines.push(
+      "",
+      "你安装了以下技能（skill）。当用户的请求匹配某个技能时，先用 skill 工具加载它的指令，再照做：",
+      ...skills.map((s) => `  - ${s.name}：${s.description}`),
+    );
   }
   return lines.join("\n");
 }

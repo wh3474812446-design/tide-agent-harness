@@ -72,7 +72,7 @@ export class ToolExecutor {
       const decision = await this.#policy.decide(tool, call.input);
       if (!decision.allowed) throw new Error(`Permission denied: ${decision.reason}`);
       const output = await this.#runWithTimeout(tool, call.input, parentSignal);
-      const result = this.#result(call, this.#truncate(output), false);
+      const result = this.#result(call, this.#truncate(output, tool.maxResultChars), false);
       this.#events.emit({ type: "tool.finished", id: call.id, name: call.name, isError: false });
       return result;
     } catch (error) {
@@ -120,10 +120,13 @@ export class ToolExecutor {
     }
   }
 
-  #truncate(output: string): string {
-    if (output.length <= this.#maxOutputChars) return output;
-    const half = Math.floor(this.#maxOutputChars / 2);
-    return `${output.slice(0, half)}\n\n[... ${output.length - this.#maxOutputChars} characters omitted ...]\n\n${output.slice(-half)}`;
+  /** 截断超长工具输出。每个工具可用 maxResultChars 覆盖全局上限（取两者较小值）。 */
+  #truncate(output: string, toolLimit?: number): string {
+    const limit =
+      toolLimit && toolLimit > 0 ? Math.min(toolLimit, this.#maxOutputChars) : this.#maxOutputChars;
+    if (output.length <= limit) return output;
+    const half = Math.floor(limit / 2);
+    return `${output.slice(0, half)}\n\n[... ${output.length - limit} characters omitted ...]\n\n${output.slice(-half)}`;
   }
 
   #result(call: ToolCallBlock, output: string, isError: boolean): ToolResultBlock {

@@ -10,6 +10,8 @@
 
 - 🖥️ **浏览器控制台**：聊天、模型配置、工具列表、实时事件流、思考过程可视化。
 - 🧰 **本地工具**：读写/复制/移动/删除文件与文件夹、执行 shell 命令、调用可配置的 HTTP API。
+- 🔌 **MCP 协议接入**：用官方 `@modelcontextprotocol/sdk` 连接任意 MCP server（filesystem、fetch、github…），其工具自动桥接成 `mcp__<server>__<tool>` 供模型调用，支持 stdio / HTTP / SSE 三种传输。
+- 🧩 **技能（Skill）系统**：从本地目录或 git URL 安装技能（含 `SKILL.md` 的文件夹），模型按需用 `skill` 工具加载指令；也能用 `install_skill` 工具自己装技能。
 - 🔐 **风险权限模型**：`read / write / network / execute` 四档，按需放开。
 - 📂 **可选工作区范围**：在网页里选择工作目录，或放开到整台电脑。
 - 💭 **思考可见**：发完消息有「思考中」实时进度，模型若返回推理内容会折叠展示。
@@ -70,6 +72,8 @@ API Key 只保存在本地 `.env`，**不会上传**。
 | `HARNESS_FS_UNRESTRICTED=1` | 放开整机访问，允许绝对路径在任意位置读写（高风险） |
 | `HARNESS_COMMAND_TIMEOUT_MS` | `run_command` 单条命令超时，默认 600000（10 分钟），`0`=不限时 |
 | `HARNESS_COMMAND_MAX_BUFFER` | 命令输出字节上限，默认 10MB |
+| `HARNESS_MCP_CONFIG` | MCP 服务器配置文件路径，不设则自动探测根目录 `mcp.json`（见下文「MCP 与技能」） |
+| `HARNESS_SKILLS_DIR` | 技能目录，默认 `<项目根>/skills`（见下文「MCP 与技能」） |
 
 > ⚠️ `execute` 和整机访问属于高风险能力：开启后模型可在你的电脑上执行任意命令、读写任意文件。仅在信任当前任务时使用。
 
@@ -84,19 +88,61 @@ API Key 只保存在本地 `.env`，**不会上传**。
 | 调用本机 CLI | ✅ | 通过 `run_command` 调用 PATH 上任意 CLI（gh、curl、python…），可传 key 鉴权 |
 | 读写本地文件 / 整机访问 | ✅ | 内置文件工具 + 可放开到整台电脑 |
 | 调用 HTTP API | ✅ | 通过 `HARNESS_API_TOOLS` 配置的 JSON 工具 |
-| 自己给自己装 skill | 🚧 待更新 | 目前没有 skill/插件系统，无法在运行时给自己加能力 |
-| 连接 MCP（Model Context Protocol） | 🚧 待更新 | 目前没有 MCP 客户端，给 key 也无法连接 MCP server |
+| 自己给自己装 skill | ✅ | `install_skill` 工具 / `--install-skill` 命令，从本地目录或 git URL 安装；`skill` 工具按需加载指令 |
+| 连接 MCP（Model Context Protocol） | ✅ | 官方 SDK，配置 `mcp.json` 即连接 server，工具桥接成 `mcp__server__tool`，支持 stdio/HTTP/SSE |
 
 ---
+
+## 🔌 MCP 与 🧩 技能
+
+### 接入 MCP server
+
+把项目根目录的 `examples/mcp.example.json` 复制为 **`mcp.json`**（或用 `HARNESS_MCP_CONFIG` 指向任意路径），格式与 Claude Desktop / Cursor 通用：
+
+```json
+{
+  "mcpServers": {
+    "filesystem": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-filesystem", "C:\\Users\\你\\Desktop"],
+      "risk": "write"
+    },
+    "remote": { "type": "http", "url": "https://example.com/mcp", "headers": { "authorization": "Bearer xxx" } }
+  }
+}
+```
+
+- 启动时 Tide 自动连接每个 server，把它的工具注册成 **`mcp__<server>__<tool>`**。
+- 单个 server 连不上**不影响**其它 server 和整个程序（会在事件流里报错）。
+- 传输支持 **stdio**（`command`/`args`）、**HTTP**（`type:"http"`）、**SSE**（`type:"sse"`）。
+- `risk` 默认按工具的 `readOnlyHint` 推断（只读→`read`，否则→`execute`），可在配置里覆盖；记得在 `HARNESS_ALLOW_RISKS` 里放行对应档位。
+- Windows 上 `npx`/`npm` 这类服务器已自动用 `cmd.exe /c` 调用，规避 `spawn ENOENT`。
+
+### 安装与使用技能
+
+一个技能 = 一个含 **`SKILL.md`** 的文件夹（YAML frontmatter 声明 `name`/`description`，正文是给模型的操作指令）。技能放在 `HARNESS_SKILLS_DIR`（默认 `<项目根>/skills`）。
+
+安装方式（两种来源）：
+
+```powershell
+# 从本地目录安装（示例技能）
+npm run chat -- --install-skill examples/skills/echo-note
+# 从 git 仓库安装（仓库根目录需含 SKILL.md）
+npm run chat -- --install-skill https://github.com/owner/repo.git
+```
+
+模型也能用 **`install_skill`** 工具自己安装（高风险，归 `execute`）。安装后**下次启动**该技能即出现在系统提示词里，模型可用 **`skill`** 工具按名加载它的指令再执行。
 
 ## 🛠️ 待更新（Roadmap）
 
 以下能力**当前尚未实现**，计划后续补上：
 
-- **MCP 客户端接入** 🚧 —— 让 Tide 能像主流 Agent 一样连接 MCP server（filesystem、github、puppeteer 等），通过 key/配置自动接入。
-- **Skill / 工具热加载** 🚧 —— 支持运行时从指定目录读取并自注册工具，实现“自己给自己装能力”。
+- **MCP / 技能热加载** 🚧 —— 现在装新技能要重启才生效；计划支持运行时热加载，免重启。
 - **更多大模型接入** 🚧 —— 当前仅启用 DeepSeek。计划恢复并完善对 **通义千问 Qwen、智谱 GLM、MiniMax、Kimi、小米 MiMo、Anthropic Claude，以及任意 OpenAI 兼容**模型的接入与在网页里一键切换。
 - 流式输出（边生成边显示）、命令执行的交互式审批等。
+
+> ✅ **已完成**：MCP 客户端接入、技能（Skill）安装与调用（本节原列项已实现，见上文「能力一览」与「MCP 与技能」）。
 
 > 这些都是已知缺口，欢迎在 Issue 区反馈优先级。
 
@@ -125,6 +171,8 @@ src/
   core/       Agent 主循环
   model/      模型 Provider 适配（OpenAI 兼容 / Anthropic）
   tools/      内置工具（文件/命令）+ HTTP API 工具
+  mcp/        MCP 客户端：配置加载 + 连接 server + 工具桥接
+  skills/     技能系统：加载 SKILL.md、skill/install_skill 工具、安装器
   policy/     工具风险策略
   context/    上下文管理
   session/    会话存储
@@ -133,7 +181,7 @@ web/          浏览器控制台（静态页 + 前端逻辑）
 tools/        install.ps1 一键安装脚本
   Tide.vbs       隐藏启动器（wscript 无窗口拉起 supervisor）
   supervisor.ps1 后台托管后端（隐藏、探活、开浏览器）
-examples/     api-tools.example.json 示例
+examples/     api-tools / mcp 配置示例 + skills/ 示例技能
 tests/        测试
 安装 Tide.cmd   一键安装入口
 Start Tide.cmd  启动器（转交隐藏 supervisor，后端后台托管 + 自动开浏览器）

@@ -67,6 +67,15 @@ const server = http.createServer(async (request, response) => {
         })),
         loadedApiTools: runtime.loadedApiTools,
         loadedEnvCount,
+        mcp: {
+          servers: runtime.mcpServers,
+          loadedTools: runtime.loadedMcpTools,
+        },
+        skills: runtime.skills.map((skill) => ({
+          name: skill.name,
+          description: skill.description,
+        })),
+        skillsDir: runtime.skillsDir,
         workspace: {
           root: runtime.workspaceRoot,
           unrestricted: runtime.fsUnrestricted,
@@ -90,6 +99,7 @@ const server = http.createServer(async (request, response) => {
         baseUrl: body.baseUrl,
         model: body.model,
       });
+      await runtime.dispose();
       runtime = await createTideRuntime({ cwd, events });
       sendJson(response, 200, {
         ok: true,
@@ -106,6 +116,7 @@ const server = http.createServer(async (request, response) => {
         workspace: body.workspace,
         unrestricted: body.unrestricted,
       });
+      await runtime.dispose();
       runtime = await createTideRuntime({ cwd, events });
       sendJson(response, 200, {
         ok: true,
@@ -145,7 +156,7 @@ const server = http.createServer(async (request, response) => {
       // 主动退出：回应后让后端进程自行退出（隐藏的后端没有窗口可关，靠这个开关）。
       sendJson(response, 200, { ok: true });
       response.on("finish", () => {
-        setTimeout(() => process.exit(0), 150);
+        void runtime.dispose().finally(() => setTimeout(() => process.exit(0), 150));
       });
       return;
     }
