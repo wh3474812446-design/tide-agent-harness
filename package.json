@@ -4,7 +4,11 @@
   "private": true,
   "type": "module",
   "description": "Tide, a configurable local agent harness for model and API tool calls.",
+  "bin": {
+    "tide": "bin/tide.mjs"
+  },
   "scripts": {
+    "tide": "tsx src/cli.ts",
     "start": "tsx src/cli.ts",
     "web": "tsx src/server.ts",
     "web:open": "tsx src/server.ts --open",

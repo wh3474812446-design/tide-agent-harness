@@ -1,4 +1,4 @@
-import { access } from "node:fs/promises";
+import { access, readFile } from "node:fs/promises";
 import path from "node:path";
 import { loadEnvFile } from "../config/env.js";
 import { AgentLoop } from "../core/agent-loop.js";
@@ -33,6 +33,8 @@ export interface TideRuntime {
   /** 已加载的技能（启动快照；实时列表用 skillManager.list()）。 */
   skills: LoadedSkill[];
   skillsDir: string;
+  /** 是否加载了项目记忆文件（CLAUDE.md / AGENTS.md）。 */
+  hasProjectContext: boolean;
   /** 技能管理器：支持运行时 reload（热加载），install 后无需重启。 */
   skillManager?: SkillManager;
   /** 释放资源（关闭 MCP 子进程 / HTTP 会话）。退出前调用。 */
@@ -106,13 +108,15 @@ export async function createTideRuntime(options: {
   });
   const executor = new ToolExecutor({ cwd: workspaceRoot, registry, policy, events });
   const providerName = modelProviderName();
+  // 项目记忆：自动加载工作区里的 CLAUDE.md / AGENTS.md，注入系统提示（对照 Claude Code）。
+  const projectContext = await loadProjectContext(workspaceRoot, options.cwd);
   const agent = new AgentLoop({
     provider: createModelProvider(providerName),
     registry,
     executor,
     sessions: new SessionStore(path.join(options.cwd, ".sessions")),
     events,
-    systemPrompt: buildSystemPrompt(workspaceRoot, skills),
+    systemPrompt: buildSystemPrompt(workspaceRoot, skills, projectContext),
   });
 
   return {
@@ -128,6 +132,7 @@ export async function createTideRuntime(options: {
     loadedMcpTools,
     skills,
     skillsDir,
+    hasProjectContext: projectContext !== null,
     skillManager,
     async dispose() {
       await disposeMcp();
@@ -167,7 +172,39 @@ function modelProviderName(): string {
   return (process.env.HARNESS_MODEL_PROVIDER ?? "deepseek").trim().toLowerCase();
 }
 
-function buildSystemPrompt(workspaceRoot: string, skills: LoadedSkill[] = []): string {
+/**
+ * 加载项目记忆文件，注入系统提示。优先级：工作区 CLAUDE.md > AGENTS.md > 启动目录同名文件。
+ * 上限 12000 字符，避免一份超大文档撑爆上下文。
+ */
+async function loadProjectContext(workspaceRoot: string, cwd: string): Promise<string | null> {
+  const candidates = [
+    path.join(workspaceRoot, "CLAUDE.md"),
+    path.join(workspaceRoot, "AGENTS.md"),
+    path.join(cwd, "CLAUDE.md"),
+    path.join(cwd, "AGENTS.md"),
+  ];
+  const seen = new Set<string>();
+  for (const file of candidates) {
+    if (seen.has(file)) continue;
+    seen.add(file);
+    try {
+      const content = (await readFile(file, "utf8")).trim();
+      if (!content) continue;
+      const max = 12000;
+      const body = content.length > max ? `${content.slice(0, max)}\n…（已截断）` : content;
+      return `（来自 ${path.basename(file)}）\n${body}`;
+    } catch {
+      // 文件不存在，试下一个
+    }
+  }
+  return null;
+}
+
+function buildSystemPrompt(
+  workspaceRoot: string,
+  skills: LoadedSkill[] = [],
+  projectContext: string | null = null,
+): string {
   const unrestricted = process.env.HARNESS_FS_UNRESTRICTED === "1";
   const lines = [
     "你是 Tide，一个本地智能体助手。请始终使用简体中文回复。",
@@ -189,6 +226,15 @@ function buildSystemPrompt(workspaceRoot: string, skills: LoadedSkill[] = []): s
       "",
       "你安装了以下技能（skill）。当用户的请求匹配某个技能时，先用 skill 工具加载它的指令，再照做：",
       ...skills.map((s) => `  - ${s.name}：${s.description}`),
+    );
+  }
+  if (projectContext) {
+    lines.push(
+      "",
+      "以下是当前项目的说明文档，请在工作时遵循其中的约定：",
+      "----------",
+      projectContext,
+      "----------",
     );
   }
   return lines.join("\n");

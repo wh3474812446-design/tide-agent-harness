@@ -2,6 +2,9 @@ import { ToolRegistry } from "../tool.js";
 import { copyPathTool } from "./copy-path.js";
 import { createDirectoryTool } from "./create-directory.js";
 import { deletePathTool } from "./delete-path.js";
+import { getCommandOutputTool } from "./get-command-output.js";
+import { globTool } from "./glob.js";
+import { grepTool } from "./grep.js";
 import { listFilesTool } from "./list-files.js";
 import { movePathTool } from "./move-path.js";
 import { readFileTool } from "./read-file.js";
@@ -16,11 +19,14 @@ export function createDefaultToolRegistry(): ToolRegistry {
     createDirectoryTool,
     deletePathTool,
     listFilesTool,
+    globTool,
+    grepTool,
     movePathTool,
     readFileTool,
     writeFileTool,
     replaceInFileTool,
     runCommandTool,
+    getCommandOutputTool,
   ]) {
     registry.register(tool);
   }

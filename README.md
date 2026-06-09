@@ -9,7 +9,9 @@
 ## ✨ 特性
 
 - 🖥️ **浏览器控制台**：聊天、模型配置、工具列表、实时事件流、思考过程可视化。
-- 🧰 **本地工具**：读写/复制/移动/删除文件与文件夹、执行 shell 命令、调用可配置的 HTTP API。
+- 🧰 **本地工具**：读写/复制/移动/删除文件与文件夹、执行 shell 命令（含后台长任务）、`grep`/`glob` 全代码库搜索、调用可配置的 HTTP API。
+- 🧠 **项目级上下文**：启动自动加载工作区 `CLAUDE.md` / `AGENTS.md`；`read_file` 带行号与区间读取，编辑更精准。
+- ⌨️ **终端界面**：`npm link` 后用 `tide` 命令在任意目录启动，Claude Code 风格的本地智能体终端。
 - 🔌 **MCP 协议接入**：用官方 `@modelcontextprotocol/sdk` 连接任意 MCP server（filesystem、fetch、github…），其工具自动桥接成 `mcp__<server>__<tool>` 供模型调用，支持 stdio / HTTP / SSE 三种传输。
 - 🧩 **技能（Skill）系统**：从本地目录或 git URL 安装技能（含 `SKILL.md` 的文件夹），模型按需用 `skill` 工具加载指令；也能用 `install_skill` 工具自己装技能。**热加载——安装即用，无需重启**；网页左栏有 MCP / 技能面板可视化管理。
 - 🔐 **风险权限模型**：`read / write / network / execute` 四档，按需放开。
@@ -84,9 +86,13 @@ API Key 只保存在本地 `.env`，**不会上传**。
 | 能力 | 是否支持 | 说明 |
 |------|:---:|------|
 | 自己在终端跑命令 | ✅ | `run_command`（execute 权限），可跑任意 shell 命令；超时与输出上限可在 `.env` 调整 |
+| 跑后台长任务（dev server / watch） | ✅ | `run_command` 传 `run_in_background=true` 返回 job id，再用 `get_command_output` 轮询输出 |
+| 跨文件搜代码 | ✅ | `grep`（按内容正则，优先 ripgrep）+ `glob`（按文件名模式 `**/*.ts`），对齐 Claude Code |
 | 自己去 GitHub 克隆/安装项目 | ✅ | 通过 `run_command` 调 `git clone` / `npm install` 等（需 git 在 PATH、能联网） |
 | 调用本机 CLI | ✅ | 通过 `run_command` 调用 PATH 上任意 CLI（gh、curl、python…），可传 key 鉴权 |
-| 读写本地文件 / 整机访问 | ✅ | 内置文件工具 + 可放开到整台电脑 |
+| 读写本地文件 / 整机访问 | ✅ | 内置文件工具（`read_file` 带行号 + offset/limit 区间读）+ 可放开到整台电脑 |
+| 读取项目约定 | ✅ | 启动时自动加载工作区 `CLAUDE.md` / `AGENTS.md` 注入系统提示 |
+| 终端里直接对话 | ✅ | `npm link` 后用 `tide` 命令在任意目录启动，Claude Code 风格的终端界面 |
 | 调用 HTTP API | ✅ | 通过 `HARNESS_API_TOOLS` 配置的 JSON 工具 |
 | 自己给自己装 skill | ✅ | `install_skill` 工具 / `--install-skill` 命令，从本地目录或 git URL 安装；`skill` 工具按需加载指令 |
 | 连接 MCP（Model Context Protocol） | ✅ | 官方 SDK，配置 `mcp.json` 即连接 server，工具桥接成 `mcp__server__tool`，支持 stdio/HTTP/SSE |
@@ -197,9 +203,13 @@ npm install        # 安装依赖
 npm run web:open   # 启动控制台并打开浏览器
 npm start          # 命令行聊天
 npm run check      # 类型检查 + 测试
+
+npm link           # 注册全局 tide 命令（一次即可）
+tide               # 之后在任意项目目录直接启动终端界面
+tide "读取 README.md 并总结"   # 一次性提问模式
 ```
 
-要求 Node.js ≥ 20。
+`tide` 会把**当前目录**当作工作区（自动加载该目录的 `CLAUDE.md`），模型凭据从当前目录或 Tide 安装目录的 `.env` 读取。要求 Node.js ≥ 20。
 
 ---
 
