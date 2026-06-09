@@ -873,3 +873,114 @@ h1 {
   color: var(--muted);
   max-width: 240px;
 }
+
+/* --- MCP 服务器 / 技能 面板 --- */
+.mcp-list,
+.skill-list {
+  overflow: auto;
+  min-width: 0;
+  min-height: 0;
+  max-height: 220px;
+}
+
+.tool-item.muted {
+  color: var(--faint);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.mcp-item {
+  min-width: 0;
+  padding: 11px 15px;
+  border-bottom: 1px solid var(--line);
+  background: oklch(15.8% 0.009 260);
+}
+
+.mcp-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.mcp-dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--faint);
+}
+
+.mcp-dot.is-ok {
+  background: var(--success);
+}
+
+.mcp-dot.is-bad {
+  background: var(--danger);
+}
+
+.mcp-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.mcp-tools {
+  flex: none;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.mcp-error {
+  margin-top: 5px;
+  overflow-wrap: anywhere;
+  color: var(--danger);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.reload-button {
+  margin: 10px 12px 12px;
+  width: calc(100% - 24px);
+}
+
+.skill-install-form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  border-top: 1px solid var(--line);
+}
+
+.skill-install-form input[type="text"] {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  background: var(--panel);
+  color: var(--text);
+  font-size: 12px;
+}
+
+.skill-install-form input[type="text"]:focus-visible {
+  border-color: var(--accent);
+  outline: none;
+}
+
+.skill-install-toggle {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--muted);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.skill-install-toggle input {
+  flex: none;
+}

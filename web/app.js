@@ -27,6 +27,15 @@ const elements = {
   saveWorkspaceButton: document.querySelector("#saveWorkspaceButton"),
   toolList: document.querySelector("#toolList"),
   toolCount: document.querySelector("#toolCount"),
+  mcpList: document.querySelector("#mcpList"),
+  mcpCount: document.querySelector("#mcpCount"),
+  skillList: document.querySelector("#skillList"),
+  skillCount: document.querySelector("#skillCount"),
+  skillInstallForm: document.querySelector("#skillInstallForm"),
+  skillSourceInput: document.querySelector("#skillSourceInput"),
+  skillOverwriteInput: document.querySelector("#skillOverwriteInput"),
+  installSkillButton: document.querySelector("#installSkillButton"),
+  reloadMcpButton: document.querySelector("#reloadMcpButton"),
   eventList: document.querySelector("#eventList"),
   eventCount: document.querySelector("#eventCount"),
   healthDot: document.querySelector("#healthDot"),
@@ -255,6 +264,52 @@ elements.workspaceForm.addEventListener("submit", async (event) => {
   }
 });
 
+elements.skillInstallForm.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const source = elements.skillSourceInput.value.trim();
+  if (!source) return;
+  elements.installSkillButton.disabled = true;
+  const original = elements.installSkillButton.textContent;
+  elements.installSkillButton.textContent = "安装中…";
+  try {
+    const response = await fetch("/api/skills/install", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ source, overwrite: elements.skillOverwriteInput.checked }),
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || "安装失败。");
+    elements.skillSourceInput.value = "";
+    elements.skillOverwriteInput.checked = false;
+    renderSkills(data.skills || []);
+    showToast(`技能「${data.installed}」已安装并立即可用。`);
+    await loadState();
+  } catch (error) {
+    showToast(error instanceof Error ? error.message : String(error));
+  } finally {
+    elements.installSkillButton.disabled = false;
+    elements.installSkillButton.textContent = original;
+  }
+});
+
+elements.reloadMcpButton.addEventListener("click", async () => {
+  elements.reloadMcpButton.disabled = true;
+  const original = elements.reloadMcpButton.textContent;
+  elements.reloadMcpButton.textContent = "重载中…";
+  try {
+    const response = await fetch("/api/reload", { method: "POST" });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || "重载失败。");
+    showToast("已重新连接 MCP 并重载技能。");
+    await loadState();
+  } catch (error) {
+    showToast(error instanceof Error ? error.message : String(error));
+  } finally {
+    elements.reloadMcpButton.disabled = false;
+    elements.reloadMcpButton.textContent = original;
+  }
+});
+
 async function loadState() {
   try {
     const response = await fetch("/api/state");
@@ -267,6 +322,8 @@ async function loadState() {
     elements.healthDot.classList.add("is-online");
     renderModelConfig(state.modelPresets || [], state.modelConfig);
     renderWorkspace(state.workspace);
+    renderMcp(state.mcp || { servers: [], loadedTools: 0 });
+    renderSkills(state.skills || []);
     renderTools(state.tools || []);
     appendEvents(state.recentEvents || []);
   } catch (error) {
@@ -379,6 +436,70 @@ function renderTools(tools) {
   );
 }
 
+function renderMcp(mcp) {
+  const servers = mcp.servers || [];
+  elements.mcpCount.textContent = `${mcp.loadedTools || 0} 工具`;
+  if (servers.length === 0) {
+    const empty = document.createElement("div");
+    empty.className = "tool-item muted";
+    empty.textContent = "未配置 MCP（在根目录放 mcp.json 后点下方按钮重连）";
+    elements.mcpList.replaceChildren(empty);
+    return;
+  }
+  elements.mcpList.replaceChildren(
+    ...servers.map((server) => {
+      const item = document.createElement("div");
+      item.className = "mcp-item";
+
+      const head = document.createElement("div");
+      head.className = "mcp-head";
+      const dot = document.createElement("span");
+      dot.className = `mcp-dot ${server.ok ? "is-ok" : "is-bad"}`;
+      const name = document.createElement("span");
+      name.className = "mcp-name";
+      name.textContent = server.name;
+      const count = document.createElement("span");
+      count.className = "mcp-tools";
+      count.textContent = server.ok ? `${server.tools} 工具` : "未连接";
+      head.append(dot, name, count);
+
+      item.append(head);
+      if (!server.ok && server.error) {
+        const err = document.createElement("div");
+        err.className = "mcp-error";
+        err.textContent = server.error;
+        item.append(err);
+      }
+      return item;
+    }),
+  );
+}
+
+function renderSkills(skills) {
+  elements.skillCount.textContent = String(skills.length);
+  if (skills.length === 0) {
+    const empty = document.createElement("div");
+    empty.className = "tool-item muted";
+    empty.textContent = "暂无技能，可在下方从本地目录或 git URL 安装。";
+    elements.skillList.replaceChildren(empty);
+    return;
+  }
+  elements.skillList.replaceChildren(
+    ...skills.map((skill) => {
+      const item = document.createElement("div");
+      item.className = "tool-item";
+      const name = document.createElement("div");
+      name.className = "tool-name";
+      name.textContent = skill.name;
+      const description = document.createElement("div");
+      description.className = "tool-description";
+      description.textContent = skill.description || "";
+      item.append(name, description);
+      return item;
+    }),
+  );
+}
+
 function addMessage(message) {
   messages.push({
     at: new Date().toISOString(),
@@ -477,6 +598,11 @@ function renderEvents() {
 }
 
 function eventDetail(event) {
+  if ("server" in event) {
+    if ("tools" in event) return `${event.server}（${event.tools} 工具）`;
+    if ("error" in event) return `${event.server}：${event.error}`;
+    return event.server;
+  }
   if ("name" in event) return toolDisplayName(event.name);
   if ("turn" in event) return `第 ${event.turn} 轮`;
   if ("sessionId" in event) return shortId(event.sessionId);
@@ -655,6 +781,12 @@ function eventLabel(type) {
     "tool.finished": "工具完成",
     "context.compacted": "上下文压缩",
     "agent.finished": "任务完成",
+    "mcp.connecting": "MCP 连接中",
+    "mcp.connected": "MCP 已连接",
+    "mcp.failed": "MCP 失败",
+    "skill.loaded": "技能已加载",
+    "skill.invoked": "调用技能",
+    "skill.installed": "技能已安装",
   };
   return labels[type] || type;
 }

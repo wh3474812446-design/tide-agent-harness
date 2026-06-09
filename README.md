@@ -11,7 +11,7 @@
 - 🖥️ **浏览器控制台**：聊天、模型配置、工具列表、实时事件流、思考过程可视化。
 - 🧰 **本地工具**：读写/复制/移动/删除文件与文件夹、执行 shell 命令、调用可配置的 HTTP API。
 - 🔌 **MCP 协议接入**：用官方 `@modelcontextprotocol/sdk` 连接任意 MCP server（filesystem、fetch、github…），其工具自动桥接成 `mcp__<server>__<tool>` 供模型调用，支持 stdio / HTTP / SSE 三种传输。
-- 🧩 **技能（Skill）系统**：从本地目录或 git URL 安装技能（含 `SKILL.md` 的文件夹），模型按需用 `skill` 工具加载指令；也能用 `install_skill` 工具自己装技能。
+- 🧩 **技能（Skill）系统**：从本地目录或 git URL 安装技能（含 `SKILL.md` 的文件夹），模型按需用 `skill` 工具加载指令；也能用 `install_skill` 工具自己装技能。**热加载——安装即用，无需重启**；网页左栏有 MCP / 技能面板可视化管理。
 - 🔐 **风险权限模型**：`read / write / network / execute` 四档，按需放开。
 - 📂 **可选工作区范围**：在网页里选择工作目录，或放开到整台电脑。
 - 💭 **思考可见**：发完消息有「思考中」实时进度，模型若返回推理内容会折叠展示。
@@ -132,17 +132,18 @@ npm run chat -- --install-skill examples/skills/echo-note
 npm run chat -- --install-skill https://github.com/owner/repo.git
 ```
 
-模型也能用 **`install_skill`** 工具自己安装（高风险，归 `execute`）。安装后**下次启动**该技能即出现在系统提示词里，模型可用 **`skill`** 工具按名加载它的指令再执行。
+模型也能用 **`install_skill`** 工具自己安装（高风险，归 `execute`）。**支持热加载：安装后立即可用，无需重启**——模型下一回合就能用 **`skill`** 工具按名加载它的指令再执行。
+
+在网页控制台左栏的「**技能**」面板里也能直接填来源安装（走 `/api/skills/install`，同样即时生效）；「**MCP 服务器**」面板显示各 server 连接状态与工具数，「重新连接 MCP / 重载技能」按钮（`/api/reload`）可在改完 `mcp.json` 后免重启重连。
 
 ## 🛠️ 待更新（Roadmap）
 
 以下能力**当前尚未实现**，计划后续补上：
 
-- **MCP / 技能热加载** 🚧 —— 现在装新技能要重启才生效；计划支持运行时热加载，免重启。
 - **更多大模型接入** 🚧 —— 当前仅启用 DeepSeek。计划恢复并完善对 **通义千问 Qwen、智谱 GLM、MiniMax、Kimi、小米 MiMo、Anthropic Claude，以及任意 OpenAI 兼容**模型的接入与在网页里一键切换。
 - 流式输出（边生成边显示）、命令执行的交互式审批等。
 
-> ✅ **已完成**：MCP 客户端接入、技能（Skill）安装与调用（本节原列项已实现，见上文「能力一览」与「MCP 与技能」）。
+> ✅ **已完成**：MCP 客户端接入、技能（Skill）安装与调用、**技能热加载（安装即用免重启）**、网页 MCP/技能面板（见上文「能力一览」与「MCP 与技能」）。
 
 > 这些都是已知缺口，欢迎在 Issue 区反馈优先级。
 
@@ -172,7 +173,7 @@ src/
   model/      模型 Provider 适配（OpenAI 兼容 / Anthropic）
   tools/      内置工具（文件/命令）+ HTTP API 工具
   mcp/        MCP 客户端：配置加载 + 连接 server + 工具桥接
-  skills/     技能系统：加载 SKILL.md、skill/install_skill 工具、安装器
+  skills/     技能系统：加载 SKILL.md、skill/install_skill 工具、安装器、热加载管理器
   policy/     工具风险策略
   context/    上下文管理
   session/    会话存储

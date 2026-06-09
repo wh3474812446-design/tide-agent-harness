@@ -3,10 +3,12 @@ import type { Tool } from "../tools/tool.js";
 import { ToolRegistry } from "../tools/tool.js";
 import { installSkill } from "./installer.js";
 import { loadSkills, type LoadedSkill } from "./skill-loader.js";
+import { SkillManager } from "./skill-manager.js";
 import { createSkillTool } from "./skill-tool.js";
 
 export { loadSkills, parseSkillMarkdown } from "./skill-loader.js";
 export { installSkill } from "./installer.js";
+export { SkillManager } from "./skill-manager.js";
 export type { LoadedSkill } from "./skill-loader.js";
 
 export interface SetupSkillsOptions {
@@ -17,6 +19,7 @@ export interface SetupSkillsOptions {
 }
 
 export interface SetupSkillsResult {
+  manager: SkillManager;
   skills: LoadedSkill[];
   skipped: Array<{ dir: string; reason: string }>;
   skillsDir: string;
@@ -25,40 +28,40 @@ export interface SetupSkillsResult {
 /**
  * 装配技能系统：加载 skillsDir 下的技能，注册 `skill`（按需加载指令）与
  * `install_skill`（从本地目录 / git URL 安装）两个工具。
+ * 返回 SkillManager，供运行时在安装后 reload 实现免重启热加载。
  */
 export async function setupSkills(
   registry: ToolRegistry,
   options: SetupSkillsOptions,
 ): Promise<SetupSkillsResult> {
-  const { skills, skipped } = await loadSkills(options.skillsDir);
+  const initial = await loadSkills(options.skillsDir);
+  const manager = new SkillManager(options.skillsDir, initial, options.events);
 
-  for (const skill of skills) options.events.emit({ type: "skill.loaded", name: skill.name });
+  for (const skill of initial.skills) options.events.emit({ type: "skill.loaded", name: skill.name });
 
-  // 有技能才注册 skill 调用工具（否则模型看到空工具没意义）。
-  if (skills.length > 0) {
-    registry.register(createSkillTool(skills, options.events), { skipOnConflict: true });
-  }
+  // 始终注册 skill 工具：它的 description/inputSchema 是实时读 manager 的，
+  // 热安装的技能无需重启即可被发现。
+  registry.register(createSkillTool(manager, options.events), { skipOnConflict: true });
 
   if (options.allowInstall !== false) {
-    registry.register(createInstallSkillTool(options.skillsDir, options.events), {
-      skipOnConflict: true,
-    });
+    registry.register(createInstallSkillTool(manager, options.events), { skipOnConflict: true });
   }
 
-  return { skills, skipped, skillsDir: options.skillsDir };
+  return { manager, skills: initial.skills, skipped: initial.skipped, skillsDir: options.skillsDir };
 }
 
 /**
  * `install_skill` 工具：从本地目录或 git URL 安装一个技能到 skillsDir。
- * 高风险（要联网 + 起子进程 git + 写盘），归类 execute。安装后下次启动即生效。
+ * 安装后立即 reload，使技能在下一回合即可用（无需重启）。
+ * 高风险（要联网 + 起子进程 git + 写盘），归类 execute。
  */
-function createInstallSkillTool(skillsDir: string, events: EventBus): Tool {
+function createInstallSkillTool(manager: SkillManager, events: EventBus): Tool {
   return {
     name: "install_skill",
     description:
       "Install a skill into the local skills directory from a local folder path or a git URL " +
       "(https://..., git@..., or github:owner/repo). The source must contain a SKILL.md. " +
-      "After installing, the skill becomes available the next time Tide starts.",
+      "The skill becomes available immediately after installing — no restart needed.",
     risk: "execute",
     concurrencySafe: false,
     source: "skill",
@@ -80,14 +83,15 @@ function createInstallSkillTool(skillsDir: string, events: EventBus): Tool {
     },
     async execute(input) {
       const { source, overwrite } = input as { source: string; overwrite?: boolean };
-      const result = await installSkill(source, skillsDir, { overwrite: overwrite === true });
+      const result = await installSkill(source, manager.dir, { overwrite: overwrite === true });
+      await manager.reload();
       events.emit({ type: "skill.installed", name: result.name, source: result.source });
       return JSON.stringify(
         {
           installed: result.name,
           dir: result.dir,
           overwritten: result.overwritten,
-          note: "Restart Tide to load this skill into the available skills list.",
+          note: "Skill is now available — call the skill tool with this name to use it.",
         },
         null,
         2,

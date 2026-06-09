@@ -110,6 +110,40 @@
             </form>
           </section>
 
+          <section class="panel mcp-panel">
+            <div class="panel-heading">
+              <h2>MCP 服务器</h2>
+              <span id="mcpCount">0</span>
+            </div>
+            <div class="mcp-list" id="mcpList"></div>
+            <button class="secondary-button reload-button" id="reloadMcpButton" type="button">
+              重新连接 MCP / 重载技能
+            </button>
+          </section>
+
+          <section class="panel skills-panel">
+            <div class="panel-heading">
+              <h2>技能</h2>
+              <span id="skillCount">0</span>
+            </div>
+            <div class="skill-list" id="skillList"></div>
+            <form class="skill-install-form" id="skillInstallForm">
+              <input
+                id="skillSourceInput"
+                name="source"
+                type="text"
+                autocomplete="off"
+                spellcheck="false"
+                placeholder="本地目录或 git URL，例如 examples/skills/echo-note"
+              />
+              <label class="skill-install-toggle">
+                <input id="skillOverwriteInput" type="checkbox" />
+                <span>覆盖同名技能</span>
+              </label>
+              <button class="save-model-button" id="installSkillButton" type="submit">安装技能</button>
+            </form>
+          </section>
+
           <section class="panel tools-panel">
             <div class="panel-heading">
               <h2>工具列表</h2>

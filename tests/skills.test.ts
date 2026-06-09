@@ -88,3 +88,34 @@ test("setupSkills registers skill and install_skill tools", async () => {
   assert.match(output, /Skill: one/);
   assert.match(output, /body/);
 });
+
+test("skills hot-reload: a skill installed at runtime becomes usable without restart", async () => {
+  const skillsDir = await mkdtemp(path.join(tmpdir(), "tide-hot-"));
+  const registry = new ToolRegistry();
+  const { manager } = await setupSkills(registry, { skillsDir, events: new EventBus() });
+  assert.equal(manager.list().length, 0);
+
+  const skillTool = registry.get("skill");
+  assert.ok(skillTool);
+  // Before install: the live description advertises no skills.
+  assert.match(skillTool!.description, /no skills installed yet/);
+
+  // Install a new skill into the dir, then reload — no restart.
+  const src = await mkdtemp(path.join(tmpdir(), "tide-hot-src-"));
+  await writeFile(
+    path.join(src, "SKILL.md"),
+    "---\nname: hotone\ndescription: added at runtime\n---\nhot body",
+    "utf8",
+  );
+  await installSkill(src, skillsDir);
+  await manager.reload();
+
+  assert.equal(manager.list().length, 1);
+  // The same tool object now reflects the new skill (getter-backed).
+  assert.match(skillTool!.description, /hotone/);
+  const output = await skillTool!.execute({ name: "hotone" }, {
+    cwd: skillsDir,
+    signal: new AbortController().signal,
+  });
+  assert.match(output, /hot body/);
+});

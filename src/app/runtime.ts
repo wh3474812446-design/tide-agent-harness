@@ -13,7 +13,7 @@ import { registerApiToolsFromFile } from "../tools/api/api-tool.js";
 import { createDefaultToolRegistry } from "../tools/builtins/index.js";
 import { ToolExecutor } from "../tools/executor.js";
 import { registerMcpServersFromFile, type McpServerStatus } from "../mcp/mcp-manager.js";
-import { setupSkills } from "../skills/index.js";
+import { setupSkills, type SkillManager } from "../skills/index.js";
 import type { LoadedSkill } from "../skills/skill-loader.js";
 import { getModelPreset } from "./model-config.js";
 
@@ -30,9 +30,11 @@ export interface TideRuntime {
   mcpServers: McpServerStatus[];
   /** 已注册的 MCP 工具总数。 */
   loadedMcpTools: number;
-  /** 已加载的技能。 */
+  /** 已加载的技能（启动快照；实时列表用 skillManager.list()）。 */
   skills: LoadedSkill[];
   skillsDir: string;
+  /** 技能管理器：支持运行时 reload（热加载），install 后无需重启。 */
+  skillManager?: SkillManager;
   /** 释放资源（关闭 MCP 子进程 / HTTP 会话）。退出前调用。 */
   dispose(): Promise<void>;
 }
@@ -84,9 +86,11 @@ export async function createTideRuntime(options: {
     ? path.resolve(process.env.HARNESS_SKILLS_DIR)
     : path.join(options.cwd, "skills");
   let skills: LoadedSkill[] = [];
+  let skillManager: SkillManager | undefined;
   try {
     const result = await setupSkills(registry, { skillsDir, events });
     skills = result.skills;
+    skillManager = result.manager;
   } catch (error) {
     events.emit({
       type: "mcp.failed",
@@ -124,6 +128,7 @@ export async function createTideRuntime(options: {
     loadedMcpTools,
     skills,
     skillsDir,
+    skillManager,
     async dispose() {
       await disposeMcp();
     },

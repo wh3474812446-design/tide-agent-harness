@@ -9,6 +9,7 @@ import { EventBus, type HarnessEvent } from "./events.js";
 import { createTideRuntime, loadTideEnv } from "./app/runtime.js";
 import { currentModelConfig, MODEL_PRESETS, saveModelConfig } from "./app/model-config.js";
 import { saveWorkspaceConfig } from "./app/workspace-config.js";
+import { installSkill } from "./skills/index.js";
 
 interface ChatRequest {
   message?: string;
@@ -71,7 +72,7 @@ const server = http.createServer(async (request, response) => {
           servers: runtime.mcpServers,
           loadedTools: runtime.loadedMcpTools,
         },
-        skills: runtime.skills.map((skill) => ({
+        skills: (runtime.skillManager?.list() ?? runtime.skills).map((skill) => ({
           name: skill.name,
           description: skill.description,
         })),
@@ -148,6 +149,47 @@ const server = http.createServer(async (request, response) => {
         turns: result.turns,
         toolCalls: result.toolCalls,
         events: stateEvents.slice(before),
+      });
+      return;
+    }
+
+    if (request.method === "POST" && url.pathname === "/api/skills/install") {
+      const body = (await readJson(request)) as { source?: string; overwrite?: boolean };
+      const source = body.source?.trim();
+      if (!source) {
+        sendJson(response, 400, { error: "请提供技能来源（本地目录或 git URL）。" });
+        return;
+      }
+      if (!runtime.skillManager) {
+        sendJson(response, 400, { error: "技能系统未启用。" });
+        return;
+      }
+      // 热加载：安装到磁盘后 reload，技能立即可用，无需重启。
+      const result = await installSkill(source, runtime.skillManager.dir, {
+        overwrite: body.overwrite === true,
+      });
+      await runtime.skillManager.reload();
+      events.emit({ type: "skill.installed", name: result.name, source: result.source });
+      sendJson(response, 200, {
+        ok: true,
+        installed: result.name,
+        overwritten: result.overwritten,
+        skills: runtime.skillManager.list().map((s) => ({ name: s.name, description: s.description })),
+      });
+      return;
+    }
+
+    if (request.method === "POST" && url.pathname === "/api/reload") {
+      // 重建运行时：重新读取 mcp.json 与技能目录、重连 MCP server（MCP 热重载）。
+      await runtime.dispose();
+      runtime = await createTideRuntime({ cwd, events });
+      sendJson(response, 200, {
+        ok: true,
+        mcp: { servers: runtime.mcpServers, loadedTools: runtime.loadedMcpTools },
+        skills: (runtime.skillManager?.list() ?? runtime.skills).map((s) => ({
+          name: s.name,
+          description: s.description,
+        })),
       });
       return;
     }
