@@ -165,7 +165,16 @@ export async function createTideRuntime(options: {
     createSpawnAgentTool({ provider, registry: childRegistry, executor: childExecutor, sessions, events, systemPrompt }),
   );
 
-  const agent = new AgentLoop({ provider, registry, executor, sessions, events, systemPrompt });
+  const agent = new AgentLoop({
+    provider,
+    registry,
+    executor,
+    sessions,
+    events,
+    systemPrompt,
+    maxTurns: positiveIntEnv("HARNESS_MAX_TURNS", 12),
+    maxToolCalls: positiveIntEnv("HARNESS_MAX_TOOL_CALLS", 30),
+  });
 
   return {
     agent,
@@ -242,6 +251,14 @@ export function parseAllowedRisks(value: string | undefined): RiskLevel[] {
 
 function modelProviderName(): string {
   return (process.env.HARNESS_MODEL_PROVIDER ?? "deepseek").trim().toLowerCase();
+}
+
+/** 读取正整数环境变量，非法或缺省回落到 fallback。 */
+function positiveIntEnv(name: string, fallback: number): number {
+  const raw = process.env[name];
+  if (!raw) return fallback;
+  const n = Number(raw);
+  return Number.isFinite(n) && n > 0 ? Math.floor(n) : fallback;
 }
 
 /**

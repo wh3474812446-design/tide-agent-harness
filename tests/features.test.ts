@@ -15,7 +15,9 @@ import { ToolRegistry } from "../src/tools/tool.js";
 import { ToolExecutor } from "../src/tools/executor.js";
 import { SessionStore } from "../src/session/session-store.js";
 import { EventBus } from "../src/events.js";
+import { AgentLoop } from "../src/core/agent-loop.js";
 import type { ModelProvider } from "../src/model/provider.js";
+import type { Tool } from "../src/tools/tool.js";
 
 test("estimateCost prices known models, undefined for unknown", () => {
   const cost = estimateCost("deepseek-chat", { inputTokens: 1_000_000, outputTokens: 1_000_000 });
@@ -76,6 +78,45 @@ test("parseDuckDuckGo extracts results; htmlToText strips tags", () => {
   assert.equal(results[0]?.url, "https://example.com");
   assert.match(results[0]?.title ?? "", /Example Title/);
   assert.equal(htmlToText("<p>Hello <b>world</b></p><script>bad()</script>"), "Hello world");
+});
+
+test("AgentLoop hits maxTurns gracefully (returns note, does not throw)", async () => {
+  const dir = await mkdtemp(path.join(tmpdir(), "tide-turns-"));
+  // 永远只要工具、从不收尾的 provider，必然撞上限。
+  const loopingProvider: ModelProvider = {
+    model: "deepseek-chat",
+    async complete() {
+      return {
+        content: [{ type: "tool_call", id: `c${Math.random()}`, name: "noop", input: {} }],
+        stopReason: "tool_calls",
+        usage: { inputTokens: 1, outputTokens: 1 },
+      };
+    },
+  };
+  const noop: Tool = {
+    name: "noop",
+    description: "",
+    inputSchema: { type: "object", additionalProperties: true },
+    risk: "read",
+    concurrencySafe: true,
+    execute: async () => "ok",
+  };
+  const registry = new ToolRegistry();
+  registry.register(noop);
+  const policy = new RiskPolicy({ allow: ["read"] });
+  const events = new EventBus();
+  const executor = new ToolExecutor({ cwd: dir, registry, policy, events });
+  const agent = new AgentLoop({
+    provider: loopingProvider,
+    registry,
+    executor,
+    sessions: new SessionStore(path.join(dir, ".sessions")),
+    events,
+    maxTurns: 2,
+  });
+  const result = await agent.run("loop forever");
+  assert.equal(result.turns, 2);
+  assert.match(result.finalText, /最大对话轮数/);
 });
 
 test("spawn_agent runs a child agent and returns its result", async () => {

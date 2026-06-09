@@ -54,6 +54,7 @@ export class AgentLoop {
     await this.#save(session);
 
     let toolCalls = 0;
+    let lastText = "";
     const reasoningParts: string[] = [];
     const totalUsage: TokenUsage = { inputTokens: 0, outputTokens: 0 };
     for (let turn = 1; turn <= this.#maxTurns; turn += 1) {
@@ -92,47 +93,70 @@ export class AgentLoop {
       session.messages.push(assistantMessage);
       await this.#save(session);
 
+      const turnText = response.content
+        .filter((block) => block.type === "text")
+        .map((block) => block.text)
+        .join("\n");
+      if (turnText.trim()) lastText = turnText;
+
       const requestedTools = response.content.filter(
         (block): block is ToolCallBlock => block.type === "tool_call",
       );
       if (requestedTools.length === 0) {
-        const finalText = response.content
-          .filter((block) => block.type === "text")
-          .map((block) => block.text)
-          .join("\n");
-        this.#events.emit({
-          type: "agent.finished",
-          turns: turn,
-          toolCalls,
-          inputTokens: totalUsage.inputTokens,
-          outputTokens: totalUsage.outputTokens,
-        });
-        return {
-          sessionId: session.id,
-          finalText,
-          reasoning: reasoningParts.join("\n\n") || undefined,
-          turns: turn,
-          toolCalls,
-          messages: session.messages,
-          usage: totalUsage,
-          costUsd: this.#provider.model ? estimateCost(this.#provider.model, totalUsage) : undefined,
-        };
+        return this.#finish(session, turnText, reasoningParts, turn, toolCalls, totalUsage);
       }
 
       toolCalls += requestedTools.length;
       if (toolCalls > this.#maxToolCalls) {
-        throw new Error(`Maximum tool call count exceeded: ${this.#maxToolCalls}`);
+        // 不再抛错丢弃工作：优雅返回已有内容 + 提示（对照 Claude Code 的“达到上限仍给出结果”）。
+        const note = `（已达最大工具调用数 ${this.#maxToolCalls}，任务可能未完成。可在 .env 设 HARNESS_MAX_TOOL_CALLS 调高，或把任务拆小、给出更明确的指令重试。）`;
+        return this.#finish(session, joinNote(lastText, note), reasoningParts, turn, toolCalls, totalUsage);
       }
       const results = await this.#executor.executeAll(requestedTools, options?.signal);
       session.messages.push({ role: "user", content: results });
       await this.#save(session);
     }
 
-    throw new Error(`Maximum turn count exceeded: ${this.#maxTurns}`);
+    // 轮数耗尽：同样优雅返回，而不是抛错把整段对话作废。
+    const note = `（已达最大对话轮数 ${this.#maxTurns}，任务可能未完成。可在 .env 设 HARNESS_MAX_TURNS 调高，或把任务拆小、给出更明确的指令重试。）`;
+    return this.#finish(session, joinNote(lastText, note), reasoningParts, this.#maxTurns, toolCalls, totalUsage);
+  }
+
+  /** 统一构建返回结果并发 agent.finished 事件。 */
+  #finish(
+    session: Session,
+    finalText: string,
+    reasoningParts: string[],
+    turns: number,
+    toolCalls: number,
+    usage: TokenUsage,
+  ): AgentResult {
+    this.#events.emit({
+      type: "agent.finished",
+      turns,
+      toolCalls,
+      inputTokens: usage.inputTokens,
+      outputTokens: usage.outputTokens,
+    });
+    return {
+      sessionId: session.id,
+      finalText,
+      reasoning: reasoningParts.join("\n\n") || undefined,
+      turns,
+      toolCalls,
+      messages: session.messages,
+      usage,
+      costUsd: this.#provider.model ? estimateCost(this.#provider.model, usage) : undefined,
+    };
   }
 
   async #save(session: Session): Promise<void> {
     await this.#sessions.save(session);
     this.#events.emit({ type: "session.saved", sessionId: session.id });
   }
+}
+
+/** 把已有文本和上限提示拼起来；没有已有文本时只返回提示。 */
+function joinNote(text: string, note: string): string {
+  return text.trim() ? `${text}\n\n${note}` : note;
 }
