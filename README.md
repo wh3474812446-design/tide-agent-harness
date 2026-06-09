@@ -175,8 +175,11 @@ npm run chat -- --install-skill https://github.com/owner/repo.git
 HARNESS_MODEL_PROVIDER=deepseek
 DEEPSEEK_API_KEY=你的key        # 建议在网页里填，别提交到仓库
 DEEPSEEK_BASE_URL=https://api.deepseek.com
-DEEPSEEK_MODEL=deepseek-chat
+DEEPSEEK_MODEL=deepseek-v4-pro  # 最强；也可填 deepseek-v4-flash（快而省）
 ```
+
+> DeepSeek V4（2026）：`deepseek-v4-pro`（最强，1.6T/49B）/ `deepseek-v4-flash`（快而省，284B/13B），均 1M 上下文。
+> 网页「模型」下拉可直接切换，也能手填自定义模型名。旧别名 `deepseek-chat` / `deepseek-reasoner` 将于 2026/07/24 下线，仅指向较弱的 v4-flash。
 
 `.env` 已被 `.gitignore` 排除，真实 Key 不会进仓库。
 

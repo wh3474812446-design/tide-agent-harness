@@ -10,10 +10,13 @@ interface Price {
 }
 
 const PRICES: Array<{ match: RegExp; price: Price }> = [
-  // DeepSeek（默认主力，便宜）
-  { match: /^deepseek-chat/i, price: { input: 0.27, output: 1.1 } },
-  { match: /^deepseek-reasoner/i, price: { input: 0.55, output: 2.19 } },
-  { match: /^deepseek/i, price: { input: 0.27, output: 1.1 } },
+  // DeepSeek V4（2026 最新；价格为 cache-miss 输入 / 输出，$ per 1M tokens）
+  { match: /^deepseek-v4-pro/i, price: { input: 0.435, output: 0.87 } },
+  { match: /^deepseek-v4-flash/i, price: { input: 0.14, output: 0.28 } },
+  // 旧别名（→v4-flash，2026/07/24 下线）
+  { match: /^deepseek-chat/i, price: { input: 0.14, output: 0.28 } },
+  { match: /^deepseek-reasoner/i, price: { input: 0.14, output: 0.28 } },
+  { match: /^deepseek/i, price: { input: 0.14, output: 0.28 } },
   // 通义千问
   { match: /^qwen/i, price: { input: 0.4, output: 1.2 } },
   // 智谱 GLM

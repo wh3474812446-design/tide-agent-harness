@@ -60,6 +60,7 @@ const server = http.createServer(async (request, response) => {
           label: preset.label,
           defaultBaseUrl: preset.defaultBaseUrl,
           defaultModel: preset.defaultModel,
+          models: preset.models ?? [],
         })),
         allowedRisks: runtime.allowedRisks,
         tools: runtime.tools.map((tool) => ({

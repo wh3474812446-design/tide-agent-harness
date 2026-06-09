@@ -16,6 +16,7 @@ const elements = {
   providerSelect: document.querySelector("#providerSelect"),
   apiKeyInput: document.querySelector("#apiKeyInput"),
   baseUrlInput: document.querySelector("#baseUrlInput"),
+  modelSelect: document.querySelector("#modelSelect"),
   modelInput: document.querySelector("#modelInput"),
   saveModelButton: document.querySelector("#saveModelButton"),
   workspaceForm: document.querySelector("#workspaceForm"),
@@ -199,9 +200,44 @@ elements.providerSelect.addEventListener("change", () => {
   if (!preset) return;
   elements.baseUrlInput.value = preset.defaultBaseUrl;
   elements.modelInput.value = preset.defaultModel;
+  renderModelOptions(preset, preset.defaultModel);
   elements.apiKeyInput.value = "";
   elements.apiKeyInput.placeholder = "请输入该供应商的 API Key";
 });
+
+// 模型下拉：选「自定义…」时聚焦文本框手填，否则把选中的模型 id 写进文本框。
+elements.modelSelect.addEventListener("change", () => {
+  const value = elements.modelSelect.value;
+  if (value === "__custom__") {
+    elements.modelInput.focus();
+    return;
+  }
+  elements.modelInput.value = value;
+});
+
+// 用户手填模型名时，下拉同步到匹配项或「自定义…」。
+elements.modelInput.addEventListener("input", () => {
+  const match = [...elements.modelSelect.options].some((o) => o.value === elements.modelInput.value);
+  elements.modelSelect.value = match ? elements.modelInput.value : "__custom__";
+});
+
+/** 用 preset.models 填充模型下拉，并选中 selectedModel（不在列表里则归入「自定义…」）。 */
+function renderModelOptions(preset, selectedModel) {
+  const models = (preset && preset.models) || [];
+  const options = models.map((m) => {
+    const option = document.createElement("option");
+    option.value = m.id;
+    option.textContent = m.label || m.id;
+    return option;
+  });
+  const custom = document.createElement("option");
+  custom.value = "__custom__";
+  custom.textContent = "自定义…";
+  options.push(custom);
+  elements.modelSelect.replaceChildren(...options);
+  const known = models.some((m) => m.id === selectedModel);
+  elements.modelSelect.value = known ? selectedModel : "__custom__";
+}
 
 elements.modelConfigForm.addEventListener("submit", async (event) => {
   event.preventDefault();
@@ -349,6 +385,8 @@ function renderModelConfig(presets, config) {
   elements.providerSelect.value = config.provider;
   elements.baseUrlInput.value = config.baseUrl || "";
   elements.modelInput.value = config.model || "";
+  const activePreset = presets.find((p) => p.id === config.provider);
+  renderModelOptions(activePreset, config.model || "");
   elements.apiKeyInput.value = "";
   elements.apiKeyInput.placeholder = config.hasApiKey
     ? "已保存，留空不修改"

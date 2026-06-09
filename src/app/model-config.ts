@@ -9,6 +9,8 @@ export interface ModelPreset {
   modelEnv: string;
   defaultBaseUrl: string;
   defaultModel: string;
+  /** 该供应商的可选模型列表，网页里作为模型输入框的下拉建议；仍允许手填自定义模型名。 */
+  models?: Array<{ id: string; label: string }>;
 }
 
 export interface ModelConfigInput {
@@ -26,7 +28,14 @@ export const MODEL_PRESETS: ModelPreset[] = [
     baseUrlEnv: "DEEPSEEK_BASE_URL",
     modelEnv: "DEEPSEEK_MODEL",
     defaultBaseUrl: "https://api.deepseek.com",
-    defaultModel: "deepseek-chat",
+    // 默认用最新最强的 V4 Pro（deepseek-chat 是旧别名，2026/07/24 下线，仅指向较弱的 v4-flash）。
+    defaultModel: "deepseek-v4-pro",
+    models: [
+      { id: "deepseek-v4-pro", label: "DeepSeek V4 Pro（最强，1.6T/49B，1M 上下文）" },
+      { id: "deepseek-v4-flash", label: "DeepSeek V4 Flash（快而省，284B/13B，1M 上下文）" },
+      { id: "deepseek-chat", label: "deepseek-chat（旧别名，→v4-flash，2026/07/24 下线）" },
+      { id: "deepseek-reasoner", label: "deepseek-reasoner（旧别名，→v4-flash 思考模式，2026/07/24 下线）" },
+    ],
   },
 ];
 
