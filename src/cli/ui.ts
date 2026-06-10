@@ -28,6 +28,7 @@ export function banner(info: {
   mcp: number;
   skills: number;
   projectContext: boolean;
+  memory?: boolean;
 }): string {
   const { dim, bold, cyan, green } = color;
   const line = dim("─".repeat(58));
@@ -41,7 +42,8 @@ export function banner(info: {
     `  ${dim("工具")}    ${info.tools} 个内置/扩展` +
       (info.mcp ? dim(` · MCP ${info.mcp}`) : "") +
       (info.skills ? dim(` · 技能 ${info.skills}`) : "") +
-      (info.projectContext ? green(" · 已载项目记忆") : ""),
+      (info.projectContext ? green(" · 已载项目记忆") : "") +
+      (info.memory ? green(" · 永久记忆") : ""),
     `  ${line}`,
     `  ${dim("命令：")} ${cyan("/new")} ${dim("新会话")}  ${cyan("/plan")} ${dim("计划模式")}  ${cyan("/rewind")} ${dim("回滚")}  ${cyan("/exit")} ${dim("退出")}`,
     "",

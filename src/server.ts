@@ -78,6 +78,7 @@ const server = http.createServer(async (request, response) => {
           description: skill.description,
         })),
         skillsDir: runtime.skillsDir,
+        memoryDir: runtime.memoryDir,
         workspace: {
           root: runtime.workspaceRoot,
           unrestricted: runtime.fsUnrestricted,

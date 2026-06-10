@@ -20,6 +20,7 @@ import { HookRunner, loadHooksConfig } from "../hooks/hooks.js";
 import { CheckpointStore } from "../checkpoint/checkpoint.js";
 import type { LoadedSkill } from "../skills/skill-loader.js";
 import { getModelPreset } from "./model-config.js";
+import { setupMemory } from "./memory.js";
 import { buildSystemPrompt } from "./system-prompt.js";
 import { ContextManager } from "../context/context-manager.js";
 import { createTodoWriteTool, TodoStore } from "../tools/builtins/todo-write.js";
@@ -45,6 +46,8 @@ export interface TideRuntime {
   skillsDir: string;
   /** 是否加载了项目记忆文件（CLAUDE.md / AGENTS.md）。 */
   hasProjectContext: boolean;
+  /** 永久记忆目录（初始化失败时为 null）。 */
+  memoryDir: string | null;
   /** 检查点存储：CLI 每条消息前 begin()，/rewind 时 rewindLast()。 */
   checkpoints: CheckpointStore;
   /** 技能管理器：支持运行时 reload（热加载），install 后无需重启。 */
@@ -165,7 +168,10 @@ export async function createTideRuntime(options: {
   const sessions = new SessionStore(path.join(options.cwd, ".sessions"));
   // 项目记忆：自动加载工作区里的 CLAUDE.md / AGENTS.md，注入系统提示（对照 Claude Code）。
   const projectContext = await loadProjectContext(workspaceRoot, options.cwd);
-  const systemPrompt = buildSystemPrompt(workspaceRoot, skills, projectContext, provider.model ?? null);
+  // 永久记忆：安装级 memory/ 目录（跨会话、跨工作区），MEMORY.md 索引注入系统提示，
+  // 模型用现有文件工具读写记忆（对照 Claude Code 的 auto-memory）。
+  const memory = await setupMemory(configRoot);
+  const systemPrompt = buildSystemPrompt(workspaceRoot, skills, projectContext, provider.model ?? null, memory);
 
   // --- 子代理：用“不含 spawn_agent 的工具子集”构建独立执行器，杜绝递归；注册到主 registry。---
   // general = 全部工具；explore = 只读调研（read / network 风险），调查类子任务用它更安全。
@@ -232,6 +238,7 @@ export async function createTideRuntime(options: {
     skills,
     skillsDir,
     hasProjectContext: projectContext !== null,
+    memoryDir: memory?.dir ?? null,
     checkpoints,
     skillManager,
     async dispose() {

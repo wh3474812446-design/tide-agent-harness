@@ -98,6 +98,7 @@ console.log(
     mcp: runtime.loadedMcpTools,
     skills: runtime.skills.length,
     projectContext: runtime.hasProjectContext,
+    memory: runtime.memoryDir !== null,
   }),
 );
 

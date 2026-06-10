@@ -11,6 +11,7 @@
 - 🖥️ **浏览器控制台**：聊天、模型配置、工具列表、实时事件流、思考过程可视化。
 - 🧰 **本地工具**：读写/复制/移动/删除文件与文件夹、执行 shell 命令（含后台长任务）、`grep`/`glob` 全代码库搜索、调用可配置的 HTTP API。
 - 🧠 **项目级上下文**：启动自动加载工作区 `CLAUDE.md` / `AGENTS.md`；`read_file` 带行号与区间读取，编辑更精准。
+- 🗂️ **永久记忆**：安装级 `memory/` 目录（对照 Claude Code auto-memory），`MEMORY.md` 索引每次启动注入系统提示；对它说「记住 X」它就自己写记忆文件，下次对话开场就带着，还能如实回答「你有哪些永久记忆」。
 - ♻️ **两段式上下文压缩**：超预算先 **microcompact**——把较早的大块工具结果清成占位符（不调模型、对话全保留）；还不够再把较早对话用模型摘要成结构化总结、最近消息原样保留（对照 Claude Code 的 microcompact → auto-compact），长任务不丢早期需求/决策/踩坑。
 - ✏️ **编辑容错级联**：`replace_in_file` 匹配失败时自动按「行尾空白 → 智能引号 → 行号前缀」逐级容错（始终以文件实际文本为准替换），并支持 `replace_all` 批量改名——对照 Claude Code FileEditTool，大幅降低编辑失败率。
 - 🛡️ **读后改契约**：修改已存在的文件前必须先读过；读后被外部改动（用户/编辑器/linter）会要求重读——防止凭想象改文件、防止覆盖别人刚做的修改。
@@ -86,6 +87,7 @@ API Key 只保存在本地 `.env`，**不会上传**。
 | `HARNESS_SUBAGENT_MAX_TURNS` / `_MAX_TOOL_CALLS` | 子代理预算，默认 40 / 120 |
 | `HARNESS_MCP_CONFIG` | MCP 服务器配置文件路径，不设则自动探测根目录 `mcp.json`（见下文「MCP 与技能」） |
 | `HARNESS_SKILLS_DIR` | 技能目录，默认 `<项目根>/skills`（见下文「MCP 与技能」） |
+| `HARNESS_MEMORY_DIR` | 永久记忆目录，默认 `<项目根>/memory`，首次启动自动创建 |
 
 > ⚠️ `execute` 和整机访问属于高风险能力：开启后模型可在你的电脑上执行任意命令、读写任意文件。仅在信任当前任务时使用。
 
@@ -102,6 +104,7 @@ API Key 只保存在本地 `.env`，**不会上传**。
 | 调用本机 CLI | ✅ | 通过 `run_command` 调用 PATH 上任意 CLI（gh、curl、python…），可传 key 鉴权 |
 | 读写本地文件 / 整机访问 | ✅ | 内置文件工具（`read_file` 带行号 + offset/limit 区间读）+ 可放开到整台电脑 |
 | 读取项目约定 | ✅ | 启动时自动加载工作区 `CLAUDE.md` / `AGENTS.md` 注入系统提示 |
+| 跨会话永久记忆 | ✅ | `memory/` 目录 + `MEMORY.md` 索引注入；「记住 X」即写入，自己能查能改（`HARNESS_MEMORY_DIR` 可改位置） |
 | 长任务上下文不丢 | ✅ | 两段式压缩：先清较早的大块工具结果（microcompact），不够再模型摘要 + 保留最近消息；预算默认 200k 近似 token（1M 窗口），`HARNESS_CONTEXT_TOKENS` 可调 |
 | 编辑高成功率 | ✅ | `replace_in_file` 容错级联（行尾空白/智能引号/行号前缀）+ `replace_all`；读后改契约防覆盖外部修改 |
 | 网络抖动自愈 | ✅ | API 429/5xx 自动指数退避重试（`HARNESS_API_RETRIES`，默认 3 次），尊重 Retry-After |

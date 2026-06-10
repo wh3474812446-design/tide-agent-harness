@@ -9,3 +9,6 @@ dist/
 # 本机安装的技能与 MCP 配置（可能含本地路径/密钥），示例保留在 examples/
 /skills/
 /mcp.json
+
+# Permanent memory (user data, like .sessions)
+/memory/

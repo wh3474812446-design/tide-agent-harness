@@ -1,4 +1,5 @@
 import type { LoadedSkill } from "../skills/skill-loader.js";
+import type { MemoryContext } from "./memory.js";
 
 /**
  * Tide 的行为引导系统提示。移植自 Claude Code 的 constants/prompts.ts
@@ -12,6 +13,7 @@ export function buildSystemPrompt(
   skills: LoadedSkill[] = [],
   projectContext: string | null = null,
   model: string | null = null,
+  memory: MemoryContext | null = null,
 ): string {
   const unrestricted = process.env.HARNESS_FS_UNRESTRICTED === "1";
   const sections: string[] = [];
@@ -121,6 +123,22 @@ export function buildSystemPrompt(
         "# 技能（Skill）",
         "你安装了以下技能。当用户的请求匹配某个技能时，先用 skill 工具加载它的指令，再照做：",
         ...skills.map((s) => `  - ${s.name}：${s.description}`),
+      ].join("\n"),
+    );
+  }
+
+  if (memory) {
+    sections.push(
+      [
+        "# 永久记忆",
+        `你拥有跨会话的永久记忆，存放在目录：${memory.dir}`,
+        " - 下面是记忆索引（该目录 MEMORY.md 的内容）。需要某条记忆的细节时，用 read_file 读索引里对应的文件（传完整绝对路径）。",
+        " - 用户让你「记住」某事，或你发现值得长期保留的信息（用户偏好、项目状态与决定、重要约定、踩过的坑），就在该目录用 write_file 新建一条记忆（一条一个 .md 小文件，写清楚是什么、为什么重要），再用 replace_in_file 或 write_file 在 MEMORY.md 末尾追加一行索引：`- [标题](文件名.md) — 一句话钩子`。",
+        " - 发现记忆过时或错误时，直接更新或删除对应文件并同步索引。不要记代码本身（仓库里有）、不要记一次性细节。",
+        " - 用户问「你有哪些永久记忆 / 你记得什么」时，依据下面的索引如实回答，必要时读取具体文件展开。",
+        "----------",
+        memory.index,
+        "----------",
       ].join("\n"),
     );
   }
