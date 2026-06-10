@@ -651,7 +651,11 @@ function eventDetail(event) {
   if ("turn" in event) return `第 ${event.turn} 轮`;
   if ("sessionId" in event) return shortId(event.sessionId);
   if ("toolCalls" in event) return `${event.turns} 轮，${event.toolCalls} 次工具调用`;
-  if ("before" in event) return `${event.before} -> ${event.after}`;
+  if ("before" in event) {
+    const modeLabel =
+      event.mode === "micro" ? "清理旧工具结果" : event.mode === "truncate" ? "截断兜底" : "模型摘要";
+    return `${modeLabel} · ${event.before} -> ${event.after}`;
+  }
   return "";
 }
 

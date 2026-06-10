@@ -68,7 +68,9 @@ events.subscribe((event) => {
   if (event.type === "tool.started") console.log(ui.toolStart(event.name));
   if (event.type === "tool.finished") console.log(ui.toolDone(event.name, event.isError));
   if (event.type === "context.compacted") {
-    console.log(ui.note(`上下文已压缩：${event.before} → ${event.after}`));
+    const modeLabel =
+      event.mode === "micro" ? "清理旧工具结果" : event.mode === "truncate" ? "截断兜底" : "模型摘要";
+    console.log(ui.note(`上下文已压缩（${modeLabel}）：${event.before} → ${event.after}`));
   }
   if (event.type === "mcp.connected") console.log(ui.note(`MCP ${event.server}：${event.tools} 个工具`));
   if (event.type === "mcp.failed") console.log(ui.errorLine(`MCP ${event.server} 失败：${event.error}`));
