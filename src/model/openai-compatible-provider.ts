@@ -7,6 +7,7 @@ import type {
   ToolCallBlock,
 } from "../types.js";
 import type { ModelProvider, StreamCallbacks } from "./provider.js";
+import { fetchWithRetry } from "./retry.js";
 
 interface OpenAICompatibleProviderOptions {
   apiKey: string;
@@ -59,9 +60,9 @@ function toOpenAIConversationMessages(message: Message): OpenAIMessage[] {
     ];
   }
 
+  // tool 消息必须紧跟带 tool_calls 的 assistant 消息（OpenAI 协议要求），
+  // 所以先发 tool_result，再把同条消息里的文本（如 system-reminder）作为 user 消息放后面。
   const converted: OpenAIMessage[] = [];
-  const userText = textFromBlocks(message.content);
-  if (userText) converted.push({ role: "user", content: userText });
   for (const block of message.content) {
     if (block.type === "tool_result") {
       converted.push({
@@ -71,6 +72,8 @@ function toOpenAIConversationMessages(message: Message): OpenAIMessage[] {
       });
     }
   }
+  const userText = textFromBlocks(message.content);
+  if (userText) converted.push({ role: "user", content: userText });
   return converted;
 }
 
@@ -87,7 +90,8 @@ export class OpenAICompatibleProvider implements ModelProvider {
   constructor(options: OpenAICompatibleProviderOptions) {
     this.#options = {
       baseUrl: "https://api.openai.com/v1",
-      maxTokens: 4096,
+      // 8192：4096 会让大文件 write_file 的工具调用 JSON 被中途截断（解析失败）。
+      maxTokens: 8192,
       ...options,
     };
   }
@@ -97,7 +101,7 @@ export class OpenAICompatibleProvider implements ModelProvider {
   }
 
   async complete(request: ModelRequest): Promise<ModelResponse> {
-    const response = await fetch(`${trimTrailingSlash(this.#options.baseUrl)}/chat/completions`, {
+    const response = await fetchWithRetry(`${trimTrailingSlash(this.#options.baseUrl)}/chat/completions`, {
       method: "POST",
       headers: {
         "content-type": "application/json",
@@ -177,9 +181,12 @@ export class OpenAICompatibleProvider implements ModelProvider {
     };
   }
 
-  /** 流式实现：解析 SSE，边收边回调，结束后拼出完整 ModelResponse（含工具调用与 usage）。 */
+  /**
+   * 流式实现：解析 SSE，边收边回调，结束后拼出完整 ModelResponse（含工具调用与 usage）。
+   * 重试只发生在拿到响应头之前；正文中途断开不重发，避免给用户重复输出。
+   */
   async stream(request: ModelRequest, callbacks: StreamCallbacks): Promise<ModelResponse> {
-    const response = await fetch(`${trimTrailingSlash(this.#options.baseUrl)}/chat/completions`, {
+    const response = await fetchWithRetry(`${trimTrailingSlash(this.#options.baseUrl)}/chat/completions`, {
       method: "POST",
       headers: {
         "content-type": "application/json",

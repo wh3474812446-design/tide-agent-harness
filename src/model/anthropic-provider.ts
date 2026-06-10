@@ -7,6 +7,7 @@ import type {
   ToolCallBlock,
 } from "../types.js";
 import type { ModelProvider } from "./provider.js";
+import { fetchWithRetry } from "./retry.js";
 
 interface AnthropicProviderOptions {
   apiKey: string;
@@ -40,7 +41,7 @@ export class AnthropicProvider implements ModelProvider {
 
   constructor(options: AnthropicProviderOptions) {
     this.#options = {
-      maxTokens: 4096,
+      maxTokens: 8192,
       baseUrl: "https://api.anthropic.com/v1/messages",
       ...options,
     };
@@ -51,7 +52,7 @@ export class AnthropicProvider implements ModelProvider {
   }
 
   async complete(request: ModelRequest): Promise<ModelResponse> {
-    const response = await fetch(this.#options.baseUrl, {
+    const response = await fetchWithRetry(this.#options.baseUrl, {
       method: "POST",
       headers: {
         "content-type": "application/json",

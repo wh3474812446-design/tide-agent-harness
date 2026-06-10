@@ -39,8 +39,28 @@ Rules:
 - Before reporting the whole job done, ensure a verification step (run tests / build / check output) exists and is completed.
 - Pass the FULL updated list every call (it replaces the previous list).`;
 
-export function createTodoWriteTool(deps: { events?: EventBus }): Tool {
-  let latest: TodoItem[] = [];
+/**
+ * 会话内共享的 todo 状态：todo_write 写入，agent-loop 读取（用于「清单很久没更新」的提醒）。
+ * runtime 创建一个实例，同时交给工具工厂和 AgentLoop。
+ */
+export class TodoStore {
+  #items: TodoItem[] = [];
+
+  set(items: TodoItem[]): void {
+    this.#items = items;
+  }
+
+  get(): TodoItem[] {
+    return this.#items;
+  }
+
+  hasIncomplete(): boolean {
+    return this.#items.some((item) => item.status !== "completed");
+  }
+}
+
+export function createTodoWriteTool(deps: { events?: EventBus; store?: TodoStore }): Tool {
+  const store = deps.store ?? new TodoStore();
 
   return {
     name: "todo_write",
@@ -71,7 +91,7 @@ export function createTodoWriteTool(deps: { events?: EventBus }): Tool {
     },
     async execute(input) {
       const { todos } = input as TodoInput;
-      latest = todos;
+      store.set(todos);
       deps.events?.emit({
         type: "todos.updated",
         todos: todos.map((t) => ({ content: t.content, status: t.status })),

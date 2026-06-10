@@ -7,7 +7,7 @@ export type HarnessEvent =
   | { type: "model.usage"; turn: number; inputTokens: number; outputTokens: number }
   | { type: "tool.started"; id: string; name: string }
   | { type: "tool.finished"; id: string; name: string; isError: boolean }
-  | { type: "context.compacted"; before: number; after: number }
+  | { type: "context.compacted"; before: number; after: number; mode?: "micro" | "summary" | "truncate" }
   | { type: "todos.updated"; todos: Array<{ content: string; status: "pending" | "in_progress" | "completed" }> }
   | { type: "agent.finished"; turns: number; toolCalls: number; inputTokens: number; outputTokens: number }
   | { type: "mcp.connecting"; server: string }

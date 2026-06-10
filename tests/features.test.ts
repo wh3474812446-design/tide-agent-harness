@@ -11,6 +11,7 @@ import { RiskPolicy } from "../src/policy/policy.js";
 import { parseDuckDuckGo } from "../src/tools/builtins/web-search.js";
 import { htmlToText } from "../src/tools/builtins/web-fetch.js";
 import { createSpawnAgentTool } from "../src/tools/builtins/spawn-agent.js";
+import { ScriptedProvider } from "../src/model/scripted-provider.js";
 import { ToolRegistry } from "../src/tools/tool.js";
 import { ToolExecutor } from "../src/tools/executor.js";
 import { SessionStore } from "../src/session/session-store.js";
@@ -132,9 +133,63 @@ test("spawn_agent runs a child agent and returns its result", async () => {
   const events = new EventBus();
   const executor = new ToolExecutor({ cwd: dir, registry, policy, events });
   const sessions = new SessionStore(path.join(dir, ".sessions"));
-  const tool = createSpawnAgentTool({ provider: fakeProvider, registry, executor, sessions, events, systemPrompt: "test" });
+  const tool = createSpawnAgentTool({
+    provider: fakeProvider,
+    sessions,
+    events,
+    systemPrompt: "test",
+    general: { registry, executor },
+    explore: { registry, executor },
+  });
 
   const out = await tool.execute({ prompt: "做个子任务", description: "测试" }, { cwd: dir, signal: new AbortController().signal });
   assert.match(out, /子任务完成了/);
   assert.match(out, /测试/);
+});
+
+test("spawn_agent explore type uses the read-only registry", async () => {
+  const dir = await mkdtemp(path.join(tmpdir(), "tide-spawn-explore-"));
+  const scripted = new ScriptedProvider([
+    { content: [{ type: "text", text: "调研结论" }], stopReason: "stop" },
+  ]);
+  const events = new EventBus();
+  const policy = new RiskPolicy({ allow: ["read", "write"] });
+  const sessions = new SessionStore(path.join(dir, ".sessions"));
+
+  const writeTool: Tool = {
+    name: "fake_write",
+    description: "",
+    inputSchema: { type: "object", additionalProperties: true },
+    risk: "write",
+    concurrencySafe: false,
+    execute: async () => "wrote",
+  };
+  const readTool: Tool = { ...writeTool, name: "fake_read", risk: "read" };
+  const generalRegistry = new ToolRegistry();
+  generalRegistry.register(writeTool);
+  generalRegistry.register(readTool);
+  const exploreRegistry = new ToolRegistry();
+  exploreRegistry.register(readTool);
+
+  const tool = createSpawnAgentTool({
+    provider: scripted,
+    sessions,
+    events,
+    systemPrompt: "test",
+    general: { registry: generalRegistry, executor: new ToolExecutor({ cwd: dir, registry: generalRegistry, policy, events }) },
+    explore: { registry: exploreRegistry, executor: new ToolExecutor({ cwd: dir, registry: exploreRegistry, policy, events }) },
+  });
+
+  const out = await tool.execute(
+    { prompt: "去调研", agent_type: "explore" },
+    { cwd: dir, signal: new AbortController().signal },
+  );
+  assert.match(out, /调研结论/);
+  assert.match(out, /explore/);
+  // 子代理看到的工具集只有只读工具。
+  const childRequest = scripted.requests[0];
+  assert.ok(childRequest);
+  const toolNames = childRequest.tools.map((t) => t.name);
+  assert.ok(toolNames.includes("fake_read"));
+  assert.ok(!toolNames.includes("fake_write"));
 });

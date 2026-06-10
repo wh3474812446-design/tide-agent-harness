@@ -2,7 +2,8 @@ import { ContextManager } from "../context/context-manager.js";
 import { EventBus } from "../events.js";
 import type { ModelProvider } from "../model/provider.js";
 import type { Session, SessionStore } from "../session/session-store.js";
-import type { AgentResult, Message, TokenUsage, ToolCallBlock } from "../types.js";
+import type { TodoStore } from "../tools/builtins/todo-write.js";
+import type { AgentResult, ContentBlock, Message, TokenUsage, ToolCallBlock } from "../types.js";
 import { ToolExecutor } from "../tools/executor.js";
 import { ToolRegistry } from "../tools/tool.js";
 import { estimateCost } from "../model/pricing.js";
@@ -17,7 +18,14 @@ interface AgentLoopOptions {
   systemPrompt?: string;
   maxTurns?: number;
   maxToolCalls?: number;
+  /** 可选：todo 状态存储。传入后启用「清单长期未更新」的 system-reminder 注入。 */
+  todoStore?: TodoStore;
 }
+
+/** 连续多少次工具调用没动过 todo 清单后，注入一次提醒。 */
+const TODO_STALE_THRESHOLD = 10;
+/** 没建清单时，累计多少次工具调用后提示一次（每个 run 只提示一次）。 */
+const TODO_MISSING_THRESHOLD = 15;
 
 export class AgentLoop {
   readonly #provider: ModelProvider;
@@ -29,6 +37,7 @@ export class AgentLoop {
   readonly #systemPrompt: string;
   readonly #maxTurns: number;
   readonly #maxToolCalls: number;
+  readonly #todoStore?: TodoStore;
 
   constructor(options: AgentLoopOptions) {
     this.#provider = options.provider;
@@ -42,6 +51,7 @@ export class AgentLoop {
       "You are Tide, a careful local agent harness assistant. Use tools when needed, respect the configured risk policy, and explain final results clearly.";
     this.#maxTurns = options.maxTurns ?? 12;
     this.#maxToolCalls = options.maxToolCalls ?? 30;
+    this.#todoStore = options.todoStore;
   }
 
   async run(prompt: string, options?: { sessionId?: string; signal?: AbortSignal }): Promise<AgentResult> {
@@ -55,6 +65,9 @@ export class AgentLoop {
 
     let toolCalls = 0;
     let lastText = "";
+    // system-reminder 注入的计数器（对照 Claude Code：长任务中途持续轻提醒，防止指令稀释）。
+    let callsSinceTodoWrite = 0;
+    let missingTodoNudged = false;
     const reasoningParts: string[] = [];
     const totalUsage: TokenUsage = { inputTokens: 0, outputTokens: 0 };
     for (let turn = 1; turn <= this.#maxTurns; turn += 1) {
@@ -70,6 +83,7 @@ export class AgentLoop {
             type: "context.compacted",
             before: compacted.beforeTokens,
             after: compacted.afterTokens,
+            mode: compacted.mode,
           });
         }
       }
@@ -120,13 +134,62 @@ export class AgentLoop {
         return this.#finish(session, joinNote(lastText, note), reasoningParts, turn, toolCalls, totalUsage);
       }
       const results = await this.#executor.executeAll(requestedTools, options?.signal);
-      session.messages.push({ role: "user", content: results });
+
+      // todo 提醒：注意文本块必须放在 tool_result 之后（provider 按「先 tool 后 user」转换）。
+      const resultContent: ContentBlock[] = [...results];
+      if (this.#todoStore) {
+        const touchedTodos = requestedTools.some((call) => call.name === "todo_write");
+        callsSinceTodoWrite = touchedTodos ? 0 : callsSinceTodoWrite + requestedTools.length;
+        const reminder = this.#todoReminder(callsSinceTodoWrite, toolCalls, missingTodoNudged);
+        if (reminder) {
+          resultContent.push({ type: "text", text: reminder.text });
+          if (reminder.kind === "stale") callsSinceTodoWrite = 0;
+          if (reminder.kind === "missing") missingTodoNudged = true;
+        }
+      }
+
+      session.messages.push({ role: "user", content: resultContent });
       await this.#save(session);
     }
 
     // 轮数耗尽：同样优雅返回，而不是抛错把整段对话作废。
     const note = `（已达最大对话轮数 ${this.#maxTurns}，任务可能未完成。可在 .env 设 HARNESS_MAX_TURNS 调高，或把任务拆小、给出更明确的指令重试。）`;
     return this.#finish(session, joinNote(lastText, note), reasoningParts, this.#maxTurns, toolCalls, totalUsage);
+  }
+
+  /**
+   * 生成本轮要注入的 todo 提醒（没有则 null）：
+   *  - stale：清单有未完成项，但连续 TODO_STALE_THRESHOLD 次工具调用没更新过 —— 提醒对照清单收口；
+   *  - missing：完全没建清单且已累计大量工具调用 —— 提示用 todo_write 外化步骤（每个 run 只提一次）。
+   */
+  #todoReminder(
+    callsSinceTodoWrite: number,
+    totalToolCalls: number,
+    missingTodoNudged: boolean,
+  ): { kind: "stale" | "missing"; text: string } | null {
+    if (!this.#todoStore) return null;
+    const items = this.#todoStore.get();
+    if (items.length > 0 && this.#todoStore.hasIncomplete() && callsSinceTodoWrite >= TODO_STALE_THRESHOLD) {
+      const open = items
+        .filter((item) => item.status !== "completed")
+        .map((item) => `- [${item.status}] ${item.content}`)
+        .join("\n");
+      return {
+        kind: "stale",
+        text:
+          `<system-reminder>任务清单已连续 ${callsSinceTodoWrite} 次工具调用未更新。当前未完成项：\n${open}\n` +
+          `如果某些项其实已完成，立即用 todo_write 标记；如果方向变了，更新清单再继续。不要无视清单闷头跑。</system-reminder>`,
+      };
+    }
+    if (items.length === 0 && totalToolCalls >= TODO_MISSING_THRESHOLD && !missingTodoNudged) {
+      return {
+        kind: "missing",
+        text:
+          `<system-reminder>这个任务已经用了 ${totalToolCalls} 次工具但还没有建任务清单。` +
+          `如果它是多步骤工作，用 todo_write 把剩余步骤外化成清单，避免漏步或跑偏；如果确实是单步任务，忽略本提醒。</system-reminder>`,
+      };
+    }
+    return null;
   }
 
   /**

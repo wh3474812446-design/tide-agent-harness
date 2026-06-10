@@ -11,7 +11,10 @@
 - 🖥️ **浏览器控制台**：聊天、模型配置、工具列表、实时事件流、思考过程可视化。
 - 🧰 **本地工具**：读写/复制/移动/删除文件与文件夹、执行 shell 命令（含后台长任务）、`grep`/`glob` 全代码库搜索、调用可配置的 HTTP API。
 - 🧠 **项目级上下文**：启动自动加载工作区 `CLAUDE.md` / `AGENTS.md`；`read_file` 带行号与区间读取，编辑更精准。
-- ♻️ **自动上下文压缩**：长对话超预算时，把较早消息用模型摘要成结构化总结、最近消息原样保留（对照 Claude Code 的 auto-compact），长任务不丢早期需求/决策/踩坑——而非简单截断。
+- ♻️ **两段式上下文压缩**：超预算先 **microcompact**——把较早的大块工具结果清成占位符（不调模型、对话全保留）；还不够再把较早对话用模型摘要成结构化总结、最近消息原样保留（对照 Claude Code 的 microcompact → auto-compact），长任务不丢早期需求/决策/踩坑。
+- ✏️ **编辑容错级联**：`replace_in_file` 匹配失败时自动按「行尾空白 → 智能引号 → 行号前缀」逐级容错（始终以文件实际文本为准替换），并支持 `replace_all` 批量改名——对照 Claude Code FileEditTool，大幅降低编辑失败率。
+- 🛡️ **读后改契约**：修改已存在的文件前必须先读过；读后被外部改动（用户/编辑器/linter）会要求重读——防止凭想象改文件、防止覆盖别人刚做的修改。
+- 🔁 **API 瞬时故障自愈**：429/5xx/网络抖动自动指数退避重试（尊重 Retry-After），长任务不再因一次网络抖动整段作废。
 - ✅ **任务清单防跑偏**：`todo_write` 工具让模型把多步任务外化成清单，逐项 in_progress / completed，做完前自检验证；网页事件流实时显示进度。轮数/工具上限默认调高到 100/400，配合压缩可安全跑完项目级长任务。
 - ⌨️ **终端界面**：`npm link` 后用 `tide` 命令在任意目录启动，Claude Code 风格的本地智能体终端。
 - 🔌 **MCP 协议接入**：用官方 `@modelcontextprotocol/sdk` 连接任意 MCP server（filesystem、fetch、github…），其工具自动桥接成 `mcp__<server>__<tool>` 供模型调用，支持 stdio / HTTP / SSE 三种传输。
@@ -76,6 +79,11 @@ API Key 只保存在本地 `.env`，**不会上传**。
 | `HARNESS_FS_UNRESTRICTED=1` | 放开整机访问，允许绝对路径在任意位置读写（高风险） |
 | `HARNESS_COMMAND_TIMEOUT_MS` | `run_command` 单条命令超时，默认 600000（10 分钟），`0`=不限时 |
 | `HARNESS_COMMAND_MAX_BUFFER` | 命令输出字节上限，默认 10MB |
+| `HARNESS_TOOL_TIMEOUT_MS` | 其余工具的全局执行超时，默认 120000（`run_command`/`spawn_agent` 自管超时不受限） |
+| `HARNESS_MAX_OUTPUT_TOKENS` | 模型单次响应输出上限，默认 8192（太小会截断大文件写入） |
+| `HARNESS_API_RETRIES` | API 瞬时故障重试次数，默认 3 |
+| `HARNESS_ENFORCE_READ_BEFORE_EDIT` | 读后改契约开关，默认开；设 `0` 关闭 |
+| `HARNESS_SUBAGENT_MAX_TURNS` / `_MAX_TOOL_CALLS` | 子代理预算，默认 40 / 120 |
 | `HARNESS_MCP_CONFIG` | MCP 服务器配置文件路径，不设则自动探测根目录 `mcp.json`（见下文「MCP 与技能」） |
 | `HARNESS_SKILLS_DIR` | 技能目录，默认 `<项目根>/skills`（见下文「MCP 与技能」） |
 
@@ -94,7 +102,9 @@ API Key 只保存在本地 `.env`，**不会上传**。
 | 调用本机 CLI | ✅ | 通过 `run_command` 调用 PATH 上任意 CLI（gh、curl、python…），可传 key 鉴权 |
 | 读写本地文件 / 整机访问 | ✅ | 内置文件工具（`read_file` 带行号 + offset/limit 区间读）+ 可放开到整台电脑 |
 | 读取项目约定 | ✅ | 启动时自动加载工作区 `CLAUDE.md` / `AGENTS.md` 注入系统提示 |
-| 长任务上下文不丢 | ✅ | 超预算自动摘要式压缩（模型摘要较早对话 + 保留最近消息），对照 Claude Code auto-compact；可用 `HARNESS_CONTEXT_TOKENS` 调 |
+| 长任务上下文不丢 | ✅ | 两段式压缩：先清较早的大块工具结果（microcompact），不够再模型摘要 + 保留最近消息；预算默认 200k 近似 token（1M 窗口），`HARNESS_CONTEXT_TOKENS` 可调 |
+| 编辑高成功率 | ✅ | `replace_in_file` 容错级联（行尾空白/智能引号/行号前缀）+ `replace_all`；读后改契约防覆盖外部修改 |
+| 网络抖动自愈 | ✅ | API 429/5xx 自动指数退避重试（`HARNESS_API_RETRIES`，默认 3 次），尊重 Retry-After |
 | 多步任务防跑偏/漏步 | ✅ | `todo_write` 清单工具 + 行为引导提示（逐项完成、做完自检验证、如实汇报），轮数/工具上限默认 100/400 |
 | 终端里直接对话 | ✅ | `npm link` 后用 `tide` 命令在任意目录启动，Claude Code 风格的终端界面 |
 | 流式输出 | ✅ | OpenAI 兼容 provider SSE 流式，CLI 边收边打字 |
@@ -104,7 +114,7 @@ API Key 只保存在本地 `.env`，**不会上传**。
 | 自动化 Hooks | ✅ | `hooks.json` 配 PreToolUse(可拦截)/PostToolUse(如自动 lint) |
 | 编辑前 diff 预览 | ✅ | 写/改文件审批时展示彩色 +/- diff |
 | 改动回滚 | ✅ | 改文件前自动备份，CLI `/rewind` 撤销上一步改动 |
-| 子代理 / 并行子任务 | ✅ | `spawn_agent` 把子任务交给独立子代理，一轮多发即并行 |
+| 子代理 / 并行子任务 | ✅ | `spawn_agent` 把子任务交给独立子代理（预算 40 轮/120 调用），一轮多发即并行；`agent_type="explore"` 为只读调研型，不会误改东西 |
 | 调用 HTTP API | ✅ | 通过 `HARNESS_API_TOOLS` 配置的 JSON 工具 |
 | 自己给自己装 skill | ✅ | `install_skill` 工具 / `--install-skill` 命令，从本地目录或 git URL 安装；`skill` 工具按需加载指令 |
 | 连接 MCP（Model Context Protocol） | ✅ | 官方 SDK，配置 `mcp.json` 即连接 server，工具桥接成 `mcp__server__tool`，支持 stdio/HTTP/SSE |

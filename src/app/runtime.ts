@@ -22,7 +22,8 @@ import type { LoadedSkill } from "../skills/skill-loader.js";
 import { getModelPreset } from "./model-config.js";
 import { buildSystemPrompt } from "./system-prompt.js";
 import { ContextManager } from "../context/context-manager.js";
-import { createTodoWriteTool } from "../tools/builtins/todo-write.js";
+import { createTodoWriteTool, TodoStore } from "../tools/builtins/todo-write.js";
+import { FileStateTracker } from "../tools/file-state.js";
 
 export interface TideRuntime {
   agent: AgentLoop;
@@ -70,7 +71,9 @@ export async function createTideRuntime(options: {
   const events = options.events ?? new EventBus();
   const registry = createDefaultToolRegistry();
   // Todo 清单工具：需要 events 来把更新同步到网页面板，所以在此注册（非纯内置）。
-  registry.register(createTodoWriteTool({ events }));
+  // store 同时交给 AgentLoop，用于「清单长期未更新」的 system-reminder。
+  const todoStore = new TodoStore();
+  registry.register(createTodoWriteTool({ events, store: todoStore }));
   const configRoot = options.configRoot ? path.resolve(options.configRoot) : options.cwd;
   const apiToolsFile = process.env.HARNESS_API_TOOLS;
   let loadedApiTools = 0;
@@ -143,6 +146,10 @@ export async function createTideRuntime(options: {
   const hooksConfig = await loadHooksConfig(await resolveConfigPath(hooksFile, options.cwd, configRoot));
   const hookRunner = new HookRunner(hooksConfig, workspaceRoot);
   const checkpoints = new CheckpointStore();
+  // 读后改契约：主代理与所有子代理共享同一个文件状态（同一进程、同一批文件）。
+  const fileState = new FileStateTracker();
+  // 全局工具超时（毫秒）。run_command / spawn_agent 自带 timeoutMs=0 豁免，自管超时。
+  const toolTimeoutMs = positiveIntEnv("HARNESS_TOOL_TIMEOUT_MS", 120_000);
   const executor = new ToolExecutor({
     cwd: workspaceRoot,
     registry,
@@ -150,6 +157,8 @@ export async function createTideRuntime(options: {
     events,
     hooks: hookRunner.hasAny ? hookRunner : undefined,
     checkpoint: checkpoints,
+    fileState,
+    timeoutMs: toolTimeoutMs,
   });
   const providerName = modelProviderName();
   const provider = createModelProvider(providerName);
@@ -159,24 +168,40 @@ export async function createTideRuntime(options: {
   const systemPrompt = buildSystemPrompt(workspaceRoot, skills, projectContext, provider.model ?? null);
 
   // --- 子代理：用“不含 spawn_agent 的工具子集”构建独立执行器，杜绝递归；注册到主 registry。---
+  // general = 全部工具；explore = 只读调研（read / network 风险），调查类子任务用它更安全。
   const childRegistry = new ToolRegistry();
   for (const childTool of registry.list()) childRegistry.register(childTool);
-  const childExecutor = new ToolExecutor({
+  const exploreRegistry = new ToolRegistry();
+  for (const childTool of registry.list()) {
+    if (childTool.risk === "read" || childTool.risk === "network") exploreRegistry.register(childTool);
+  }
+  const childExecutorOptions = {
     cwd: workspaceRoot,
-    registry: childRegistry,
     policy,
     events,
     hooks: hookRunner.hasAny ? hookRunner : undefined,
     checkpoint: checkpoints,
-  });
+    fileState,
+    timeoutMs: toolTimeoutMs,
+  };
+  const childExecutor = new ToolExecutor({ ...childExecutorOptions, registry: childRegistry });
+  const exploreExecutor = new ToolExecutor({ ...childExecutorOptions, registry: exploreRegistry });
   registry.register(
-    createSpawnAgentTool({ provider, registry: childRegistry, executor: childExecutor, sessions, events, systemPrompt }),
+    createSpawnAgentTool({
+      provider,
+      sessions,
+      events,
+      systemPrompt,
+      general: { registry: childRegistry, executor: childExecutor },
+      explore: { registry: exploreRegistry, executor: exploreExecutor },
+    }),
   );
 
-  // 上下文管理：超预算自动摘要式压缩（替代旧的直接截断）。预算可用 HARNESS_CONTEXT_TOKENS 调。
+  // 上下文管理：两段式压缩（microcompact 清旧工具结果 → 不够再摘要）。预算可用 HARNESS_CONTEXT_TOKENS 调。
+  // 默认 200k 近似 token：DeepSeek V4 系列是 1M 窗口，旧默认 48k 只用了零头还频繁触发压缩。
   const context = new ContextManager({
-    maxApproxTokens: positiveIntEnv("HARNESS_CONTEXT_TOKENS", 48_000),
-    keepRecentTokens: positiveIntEnv("HARNESS_KEEP_RECENT_TOKENS", 12_000),
+    maxApproxTokens: positiveIntEnv("HARNESS_CONTEXT_TOKENS", 200_000),
+    keepRecentTokens: positiveIntEnv("HARNESS_KEEP_RECENT_TOKENS", 40_000),
   });
   const agent = new AgentLoop({
     provider,
@@ -186,6 +211,7 @@ export async function createTideRuntime(options: {
     events,
     context,
     systemPrompt,
+    todoStore,
     // 上限调高（旧默认 12/30 会在真实项目中途被掐断）：配合自动压缩，长任务现在能安全跑完。
     maxTurns: positiveIntEnv("HARNESS_MAX_TURNS", 100),
     maxToolCalls: positiveIntEnv("HARNESS_MAX_TOOL_CALLS", 400),
@@ -305,11 +331,14 @@ async function loadProjectContext(workspaceRoot: string, cwd: string): Promise<s
 }
 
 function createModelProvider(provider: string): ModelProvider {
+  // 单次响应的输出 token 上限。太小会把大文件 write_file 的工具调用 JSON 截断（解析失败）。
+  const maxTokens = positiveIntEnv("HARNESS_MAX_OUTPUT_TOKENS", 8192);
   if (provider === "anthropic") {
     const apiKey = requiredEnv("ANTHROPIC_API_KEY", "Anthropic");
     return new AnthropicProvider({
       apiKey,
       model: process.env.ANTHROPIC_MODEL ?? "claude-sonnet-4-6",
+      maxTokens,
     });
   }
 
@@ -320,6 +349,7 @@ function createModelProvider(provider: string): ModelProvider {
       apiKey,
       baseUrl: process.env[preset.baseUrlEnv] ?? preset.defaultBaseUrl,
       model: process.env[preset.modelEnv] ?? preset.defaultModel,
+      maxTokens,
     });
   }
 

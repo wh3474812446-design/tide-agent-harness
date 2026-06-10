@@ -18,8 +18,11 @@ const IGNORED_DIRS = new Set([".git", "node_modules", ".sessions", "dist", "buil
 export const grepTool: Tool = {
   name: "grep",
   description:
-    "Search file contents by regular expression across the workspace (like ripgrep). " +
-    "Returns matching lines as 'path:line: text'. Prefer this over reading whole files when looking for code.",
+    "Search file contents by regular expression across the workspace (ripgrep when available, .gitignore respected). " +
+    "Returns matching lines as 'path:line: text'. This is the primary tool for locating code: " +
+    "prefer it over reading whole files, and over `grep`/`findstr` via run_command. " +
+    "Typical flow: grep to find the file and line, then read_file with offset around that line. " +
+    "Narrow with glob (e.g. *.ts) when the pattern is common; escape regex metacharacters when searching literal code like `foo(`.",
   risk: "read",
   concurrencySafe: true,
   maxResultChars: 30000,

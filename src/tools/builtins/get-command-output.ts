@@ -10,7 +10,9 @@ export const getCommandOutputTool: Tool = {
   name: "get_command_output",
   description:
     "Fetch the accumulated output and status of a background command started by run_command (run_in_background=true). " +
-    "By default returns only output produced since the last fetch.",
+    "By default returns only output produced since the last fetch. " +
+    "The result says whether the job is still running (运行中) or done (已结束, with exit code) — " +
+    "do useful work between polls instead of polling in a tight loop.",
   risk: "read",
   concurrencySafe: true,
   inputSchema: {

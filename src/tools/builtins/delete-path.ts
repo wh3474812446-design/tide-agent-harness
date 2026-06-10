@@ -9,7 +9,10 @@ interface DeletePathInput {
 
 export const deletePathTool: Tool = {
   name: "delete_path",
-  description: "Delete a file or directory inside the workspace. Directories require recursive=true.",
+  description:
+    "Delete a file or directory inside the workspace. Directories require recursive=true. " +
+    "Directory deletion is destructive and NOT undoable — before deleting anything you did not create yourself, " +
+    "inspect it first; it may be the user's in-progress work.",
   risk: "write",
   concurrencySafe: false,
   inputSchema: {

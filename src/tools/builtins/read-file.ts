@@ -13,8 +13,10 @@ export const readFileTool: Tool = {
   name: "read_file",
   description:
     "Read a UTF-8 text file inside the workspace. Output is prefixed with line numbers (like `cat -n`). " +
-    "Use offset/limit to read a slice of a large file. The line-number prefix is for reference only — " +
-    "do not include it when editing with replace_in_file.",
+    "Use offset/limit to read a slice of a large file; when you already know which part you need, read just that part. " +
+    "The line-number prefix is for reference only — never include it in replace_in_file's search or write_file's content. " +
+    "You must read a file before editing or overwriting it (edits to unread files are rejected). " +
+    "Prefer this over `cat`/`head`/`tail` via run_command.",
   risk: "read",
   concurrencySafe: true,
   inputSchema: {
@@ -35,7 +37,10 @@ export const readFileTool: Tool = {
   },
   async execute(input, context) {
     const { path, offset = 1, limit, maxChars = 50000 } = input as ReadFileInput;
-    const content = await readFile(resolveInsideWorkspace(context.cwd, path), "utf8");
+    const filePath = resolveInsideWorkspace(context.cwd, path);
+    const content = await readFile(filePath, "utf8");
+    // 读后改契约：记录这次读取（即使只读了切片，也视为「读过该文件」）。
+    await context.fileState?.recordRead(filePath);
 
     const allLines = content.split("\n");
     const start = offset - 1;

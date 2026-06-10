@@ -1,4 +1,5 @@
 import type { JsonSchema, ModelToolDefinition, RiskLevel } from "../types.js";
+import type { FileStateTracker } from "./file-state.js";
 
 /** 检查点备份接口：文件工具改动前调用，记录原始内容以便回滚。 */
 export interface CheckpointBackup {
@@ -10,6 +11,8 @@ export interface ToolContext {
   signal: AbortSignal;
   /** 可选：改动文件前用它备份原内容，供 /rewind 回滚。 */
   checkpoint?: CheckpointBackup;
+  /** 可选：读后改契约的文件状态追踪（read_file 记录、edit/write 校验）。 */
+  fileState?: FileStateTracker;
 }
 
 /** 工具来源标签，用于状态展示与可观测性（对照 Claude Code 的 built-in / mcp / 动态加载分类）。 */
@@ -35,6 +38,12 @@ export interface Tool {
    * 单独收紧能防止一次调用撑爆上下文。
    */
   maxResultChars?: number;
+  /**
+   * 该工具的执行超时（毫秒，可选）。不设则用执行器全局默认；
+   * 设为 0 表示「自管超时、执行器不挂定时器」（run_command / spawn_agent 这类
+   * 内部有自己超时或天然长时的工具用），但仍受父级 AbortSignal 控制。
+   */
+  timeoutMs?: number;
 }
 
 export interface RegisterOptions {
