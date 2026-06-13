@@ -183,4 +183,5 @@ Write-Host "`n============================================================" -For
 Write-Host "  安装完成！" -ForegroundColor Green
 Write-Host "  - 网页控制台：双击项目里的 “一键启动 Tide”（或 Start Tide.cmd）" -ForegroundColor Green
 Write-Host "  - 命令行界面：在任意目录的终端输入  tide" -ForegroundColor Green
+Write-Host "  - 终端技巧：运行中按 ESC 可中断当前任务；支持整段多行粘贴" -ForegroundColor Green
 Write-Host "============================================================`n" -ForegroundColor Green

@@ -1,12 +1,14 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { createInterface } from "node:readline/promises";
+import type { Interface } from "node:readline/promises";
 import { stdin, stdout } from "node:process";
 import { AgentLoop } from "./core/agent-loop.js";
+import type { AgentResult } from "./types.js";
 import { EventBus } from "./events.js";
 import { createTideRuntime, loadTideEnv } from "./app/runtime.js";
 import { installSkill } from "./skills/index.js";
 import * as ui from "./cli/ui.js";
+import { createInteractiveInterface, decodePastedInput } from "./cli/paste-input.js";
 
 const cwd = process.cwd();
 // 先加载当前目录 .env（项目优先），再加载 Tide 安装目录 .env 补缺（如 API Key）——
@@ -45,7 +47,9 @@ if (installFlagIndex !== -1) {
 }
 
 const prompt = argv.join(" ").trim();
-const terminal = createInterface({ input: stdin, output: stdout });
+// 交互输入接口：TTY 下启用「括号粘贴」，整段多行粘贴会被当成一条消息而非逐行提交。
+const io = createInteractiveInterface(stdin, stdout);
+const terminal = io.terminal;
 const events = new EventBus();
 
 // 流式显示状态：是否在当前轮已打过“≈ Tide”表头、本次 run 是否流式过。
@@ -109,8 +113,9 @@ try {
     stream.headerThisTurn = false;
     stream.didStream = false;
     runtime.checkpoints.begin(prompt);
-    const result = await agent.run(prompt);
-    if (!stream.didStream) console.log(ui.assistant(result.finalText));
+    const result = await runInterruptibly((signal) => agent.run(prompt, { signal }));
+    if (result.aborted) console.log(ui.note("已中断。"));
+    else if (!stream.didStream) console.log(ui.assistant(result.finalText));
     console.log(printStats(result));
   } else {
     await runInteractiveChat(agent, terminal);
@@ -120,7 +125,7 @@ try {
   console.log(ui.errorLine(describeError(error)));
   process.exitCode = 1;
 } finally {
-  terminal.close();
+  io.dispose();
   await runtime.dispose();
 }
 
@@ -149,9 +154,36 @@ function printStats(result: {
   });
 }
 
+/**
+ * 运行 agent，并在运行期间监听 ESC：按下即中止当前 run。
+ * agent.run 收到中止信号会优雅返回 aborted 结果（不抛错），所以这里直接透传结果。
+ */
+async function runInterruptibly(
+  fn: (signal: AbortSignal) => Promise<AgentResult>,
+): Promise<AgentResult> {
+  const controller = new AbortController();
+  let interrupted = false;
+  const stop = io.onInterrupt(() => {
+    if (interrupted) return;
+    interrupted = true;
+    controller.abort();
+    // 流式输出可能停在半行：先补换行，再给中断提示。
+    if (stream.headerThisTurn) {
+      stdout.write("\n");
+      stream.headerThisTurn = false;
+    }
+    console.log(ui.note("正在中断…"));
+  });
+  try {
+    return await fn(controller.signal);
+  } finally {
+    stop();
+  }
+}
+
 async function runInteractiveChat(
   agent: AgentLoop,
-  terminal: ReturnType<typeof createInterface>,
+  terminal: Interface,
 ): Promise<void> {
   let sessionId: string | undefined;
   let planMode = false;
@@ -201,9 +233,10 @@ async function runInteractiveChat(
       stream.headerThisTurn = false;
       stream.didStream = false;
       runtime.checkpoints.begin(input);
-      const result = await agent.run(effectiveInput, { sessionId });
+      const result = await runInterruptibly((signal) => agent.run(effectiveInput, { sessionId, signal }));
       sessionId = result.sessionId;
-      if (!stream.didStream) console.log(ui.assistant(result.finalText));
+      if (result.aborted) console.log(ui.note("已中断，可继续输入。"));
+      else if (!stream.didStream) console.log(ui.assistant(result.finalText));
       console.log(printStats(result));
     } catch (error) {
       console.log(ui.errorLine(describeError(error)));
@@ -213,11 +246,12 @@ async function runInteractiveChat(
 }
 
 async function askQuestion(
-  terminal: ReturnType<typeof createInterface>,
+  terminal: Interface,
   query: string,
 ): Promise<string | undefined> {
   try {
-    return await terminal.question(query);
+    // 还原粘贴换行占位符，使多行粘贴在 input 里恢复为真正的换行。
+    return decodePastedInput(await terminal.question(query));
   } catch (error) {
     if (isNodeError(error) && error.code === "ERR_USE_AFTER_CLOSE") return undefined;
     throw error;

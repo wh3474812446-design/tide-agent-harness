@@ -68,5 +68,7 @@ export interface AgentResult {
   usage: TokenUsage;
   /** 估算费用（美元）；模型不在价目表时为 undefined。 */
   costUsd?: number;
+  /** 是否被用户中断（ESC）。中断时仍返回已有进度，而非抛错。 */
+  aborted?: boolean;
 }
 

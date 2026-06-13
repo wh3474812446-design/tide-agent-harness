@@ -3,7 +3,7 @@ import { EventBus } from "../events.js";
 import type { ModelProvider } from "../model/provider.js";
 import type { Session, SessionStore } from "../session/session-store.js";
 import type { TodoStore } from "../tools/builtins/todo-write.js";
-import type { AgentResult, ContentBlock, Message, TokenUsage, ToolCallBlock } from "../types.js";
+import type { AgentResult, ContentBlock, Message, ModelResponse, TokenUsage, ToolCallBlock } from "../types.js";
 import { ToolExecutor } from "../tools/executor.js";
 import { ToolRegistry } from "../tools/tool.js";
 import { estimateCost } from "../model/pricing.js";
@@ -71,6 +71,11 @@ export class AgentLoop {
     const reasoningParts: string[] = [];
     const totalUsage: TokenUsage = { inputTokens: 0, outputTokens: 0 };
     for (let turn = 1; turn <= this.#maxTurns; turn += 1) {
+      // 用户已按 ESC 中断（通常在上一轮工具执行期间）：不再发起新一轮，优雅收尾返回。
+      if (options?.signal?.aborted) {
+        return await this.#abortFinish(session, lastText, reasoningParts, turn, toolCalls, totalUsage);
+      }
+
       // 超预算时先做摘要式压缩，并把压缩结果写回会话（持久化），下一轮在压缩后的历史上继续。
       if (this.#context.shouldCompact(session.messages)) {
         const compacted = await this.#context.compact(session.messages, (systemPrompt, transcript) =>
@@ -96,11 +101,20 @@ export class AgentLoop {
         signal: options?.signal,
       };
       // 有流式接口就用流式（边收边发 model.delta 事件），否则退回一次性 complete。
-      const response = this.#provider.stream
-        ? await this.#provider.stream(request, {
-            onText: (delta) => this.#events.emit({ type: "model.delta", turn, text: delta }),
-          })
-        : await this.#provider.complete(request);
+      let response: ModelResponse;
+      try {
+        response = this.#provider.stream
+          ? await this.#provider.stream(request, {
+              onText: (delta) => this.#events.emit({ type: "model.delta", turn, text: delta }),
+            })
+          : await this.#provider.complete(request);
+      } catch (error) {
+        // 思考/生成期间按 ESC：fetch 被中止，优雅收尾返回已有进度，而不是抛出整页堆栈。
+        if (options?.signal?.aborted) {
+          return await this.#abortFinish(session, lastText, reasoningParts, turn, toolCalls, totalUsage);
+        }
+        throw error;
+      }
       this.#events.emit({ type: "model.responded", turn, stopReason: response.stopReason });
 
       const inputTokens = response.usage?.inputTokens ?? 0;
@@ -212,6 +226,24 @@ export class AgentLoop {
     return text;
   }
 
+  /**
+   * 用户中断（ESC）的收尾：补一条简短 assistant 消息，让会话历史保持整洁、协议合法
+   * （避免遗留「assistant 带 tool_call 却无 tool_result」之类的悬挂状态），保存后按
+   * 已有进度返回结果（aborted=true）。
+   */
+  async #abortFinish(
+    session: Session,
+    finalText: string,
+    reasoningParts: string[],
+    turns: number,
+    toolCalls: number,
+    usage: TokenUsage,
+  ): Promise<AgentResult> {
+    session.messages.push({ role: "assistant", content: [{ type: "text", text: "（已被用户中断。）" }] });
+    await this.#save(session);
+    return this.#finish(session, finalText, reasoningParts, Math.max(turns, 1), toolCalls, usage, true);
+  }
+
   /** 统一构建返回结果并发 agent.finished 事件。 */
   #finish(
     session: Session,
@@ -220,6 +252,7 @@ export class AgentLoop {
     turns: number,
     toolCalls: number,
     usage: TokenUsage,
+    aborted = false,
   ): AgentResult {
     this.#events.emit({
       type: "agent.finished",
@@ -237,6 +270,7 @@ export class AgentLoop {
       messages: session.messages,
       usage,
       costUsd: this.#provider.model ? estimateCost(this.#provider.model, usage) : undefined,
+      aborted,
     };
   }
 

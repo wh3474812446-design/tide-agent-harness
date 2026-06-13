@@ -46,6 +46,7 @@ export function banner(info: {
       (info.memory ? green(" · 永久记忆") : ""),
     `  ${line}`,
     `  ${dim("命令：")} ${cyan("/new")} ${dim("新会话")}  ${cyan("/plan")} ${dim("计划模式")}  ${cyan("/rewind")} ${dim("回滚")}  ${cyan("/exit")} ${dim("退出")}`,
+    `  ${dim("运行中按")} ${cyan("ESC")} ${dim("可中断当前任务")}`,
     "",
   ];
   return rows.join("\n");
